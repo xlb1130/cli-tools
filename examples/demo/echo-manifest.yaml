@@ -1,0 +1,32 @@
+version: 1
+operations:
+  - id: echo_json
+    title: Echo JSON
+    description: A demo CLI operation that echoes structured JSON.
+    kind: action
+    risk: read
+    input_schema:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: Text to echo back.
+        upper:
+          type: boolean
+          description: Transform the text to uppercase.
+          default: false
+    argv_template:
+      - python3
+      - -c
+      - |
+        import json, sys
+        text = sys.argv[1]
+        upper = sys.argv[2].lower() == "true"
+        if upper:
+            text = text.upper()
+        print(json.dumps({"text": text, "upper": upper}))
+      - "{text}"
+      - "{upper}"
+    output:
+      mode: json

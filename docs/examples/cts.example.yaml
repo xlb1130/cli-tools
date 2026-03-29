@@ -1,0 +1,261 @@
+version: 1
+
+app:
+  name: cts
+  default_profile: dev
+  cache_dir: ~/.cache/cts
+  state_dir: ~/.local/share/cts
+  log_dir: ~/.local/state/cts/logs
+
+auth_profiles:
+  jira-dev:
+    type: bearer
+    source: env
+    token_env: JIRA_DEV_TOKEN
+
+  github-oauth:
+    type: oauth2
+    grant_type: device_code
+    session_store: keyring
+
+  stripe-prod:
+    type: bearer
+    source: keyring
+    keyring_service: cts
+    keyring_account: stripe-prod
+
+compatibility:
+  min_cts_version: "0.1.0"
+  catalog_version: 1
+  error_contract_version: 1
+
+reliability:
+  defaults:
+    timeout_seconds: 30
+    retry:
+      max_attempts: 2
+      backoff: exponential
+      base_delay_ms: 300
+      jitter: full
+
+drift:
+  defaults:
+    detect_on_sync: true
+    on_breaking_change: freeze_mount
+    on_additive_change: auto_accept
+
+surfaces:
+  cli:
+    enabled: true
+
+  invoke:
+    enabled: true
+    default_output: json
+    non_interactive_by_default: true
+
+  mcp:
+    enabled: false
+    include_mounts:
+      - github-list-issues
+      - jira-get-issue
+
+  http:
+    enabled: false
+    bind: 127.0.0.1:7788
+
+profiles:
+  dev:
+    env:
+      region: ap-southeast-1
+      team: core
+    auth_defaults:
+      jira: jira-dev
+      github: github-oauth
+    output:
+      format: table
+    machine_output:
+      format: json
+
+  prod:
+    env:
+      region: us-east-1
+    output:
+      format: json
+    policy_overrides:
+      require_confirm_for_write: true
+
+sources:
+  github_mcp:
+    type: mcp
+    adapter: mcp_cli
+    config_file: ~/.config/claude_desktop_config.json
+    server: github
+    auth_ref: github-oauth
+    pass_env: true
+    discovery:
+      mode: live
+      cache_ttl: 3600
+    drift_policy:
+      on_breaking_change: require_manual_review
+    expose_to_surfaces: [cli, invoke, mcp]
+
+  jira_http:
+    type: http
+    base_url: https://jira.example.com/rest/api/3
+    auth_ref: jira-dev
+    headers:
+      Accept: application/json
+    reliability:
+      timeout_seconds: 15
+      retry:
+        max_attempts: 2
+      rate_limit:
+        budget_key: jira-default
+        requests_per_minute: 120
+    expose_to_surfaces: [cli, invoke, http, mcp]
+
+  stripe_api:
+    type: openapi
+    spec:
+      url: https://api.stripe.com/openapi/spec3.json
+    auth_ref: stripe-prod
+
+  github_graphql:
+    type: graphql
+    endpoint: https://api.github.com/graphql
+    schema:
+      introspection: live
+    auth_ref: github-oauth
+
+  gh_cli:
+    type: cli
+    executable: gh
+    working_dir: .
+    discovery:
+      mode: manifest
+      manifest: ~/.config/cts/manifests/gh.yaml
+    compatibility:
+      min_binary_version: "2.45.0"
+      break_on_major_upgrade: true
+    env:
+      GH_PAGER: cat
+    expose_to_surfaces: [cli, invoke]
+
+  ops_scripts:
+    type: shell
+    root: ./scripts
+    discovery:
+      mode: manifest
+      manifest: ./.cts/scripts.yaml
+
+mounts:
+  - id: github-list-issues
+    source: github_mcp
+    operation: list_issues
+    command:
+      path: [dev, github, issues, list]
+      aliases:
+        - [gh, issues, list]
+    machine:
+      stable_name: github.issue.list
+      expose_via: [cli, invoke, mcp]
+      examples:
+        - input:
+            repo: owner/repo
+      annotations:
+        safe_for_agent: true
+        side_effect_free: true
+    help:
+      summary: 列出 GitHub issues
+      description: 查询指定仓库的 issue 列表。
+      examples:
+        - "cts dev github issues list --repo owner/repo"
+        - "cts invoke github-list-issues --input-json '{\"repo\":\"owner/repo\"}'"
+      param_overrides:
+        repo:
+          help: GitHub 仓库，格式 owner/repo
+    exposure:
+      help: 列出 GitHub issues
+      hidden: false
+
+  - id: jira-get-issue
+    source: jira_http
+    operation: get_issue
+    command:
+      path: [ops, jira, issue, get]
+    machine:
+      stable_name: jira.issue.get
+      expose_via: [cli, invoke, http, mcp]
+    params:
+      key:
+        flag: --key
+        required: true
+
+  - id: stripe-customer-create
+    source: stripe_api
+    operation: create_customer
+    command:
+      path: [billing, stripe, customer, create]
+    machine:
+      stable_name: stripe.customer.create
+      expose_via: [cli, invoke]
+    reliability:
+      timeout_seconds: 20
+      retry:
+        max_attempts: 1
+      idempotency:
+        required: true
+        strategy: hash_args
+        header_name: Idempotency-Key
+
+  - id: stripe-all
+    source: stripe_api
+    select:
+      include: ["*"]
+      exclude: ["delete_*"]
+    command:
+      under: [billing, stripe]
+      naming:
+        strategy: kebab
+        group_by: tags
+        fallback_group: misc
+
+  - id: gh-repo-list
+    source: gh_cli
+    operation: repo_list
+    command:
+      path: [dev, gh, repo, list]
+    machine:
+      stable_name: gh.repo.list
+      expose_via: [cli, invoke]
+    drift_policy:
+      pin_operation_fingerprint: sha256:abcd
+      accept_additive_changes: true
+      on_breaking_change: disable_mount
+
+  - id: scripts-backup-db
+    source: ops_scripts
+    operation: backup_db
+    command:
+      path: [ops, db, backup]
+    machine:
+      stable_name: ops.db.backup
+      expose_via: [cli, invoke]
+    policy:
+      confirm: true
+      allowed_profiles: [dev, staging]
+      deny_surfaces: [mcp, http]
+
+aliases:
+  - from: [jira, issue, get]
+    to: [ops, jira, issue, get]
+
+policies:
+  require_confirm_for_write: true
+  allowed_cli_bins:
+    - gh
+    - kubectl
+    - terraform
+    - docker
+  deny_sources_in_prod:
+    - shell

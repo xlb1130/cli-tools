@@ -1,0 +1,36 @@
+{
+  "app": "cts",
+  "profile": "dev",
+  "config_files": [
+    "/Users/xielingbo/.config/cts/config.yaml",
+    "/Users/xielingbo/Documents/Project/python/cli-tools/.cts/config.yaml"
+  ],
+  "source_count": 6,
+  "mount_count": 22,
+  "surfaces": {
+    "cli": true,
+    "invoke": true,
+    "mcp": false,
+    "http": false
+  },
+  "mounts": [
+    {
+      "id": "github-list-issues",
+      "stable_name": "github.issue.list",
+      "command_path": ["dev", "github", "issues", "list"],
+      "source": "github_mcp",
+      "operation": "list_issues",
+      "risk": "read",
+      "supported_surfaces": ["cli", "invoke", "mcp"]
+    },
+    {
+      "id": "jira-get-issue",
+      "stable_name": "jira.issue.get",
+      "command_path": ["ops", "jira", "issue", "get"],
+      "source": "jira_http",
+      "operation": "get_issue",
+      "risk": "read",
+      "supported_surfaces": ["cli", "invoke", "http", "mcp"]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+version: 1
+
+app:
+  name: cts
+  default_profile: dev
+
+profiles:
+  dev: {}
+
+sources:
+  bing_mcp:
+    type: mcp
+    adapter: mcp-cli
+    config_file: ./bing-mcp-servers.json
+    server: bing-cn-mcp-server
+    discovery:
+      mode: live
+
+mounts:
+  - id: bing
+    source: bing_mcp
+    select:
+      include: ["*"]
+    command:
+      under: [bing]

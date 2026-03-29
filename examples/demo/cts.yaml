@@ -1,0 +1,30 @@
+version: 1
+
+app:
+  name: cts
+  default_profile: dev
+
+profiles:
+  dev: {}
+
+sources:
+  demo_cli:
+    type: cli
+    executable: python3
+    discovery:
+      mode: manifest
+      manifest: ./echo-manifest.yaml
+
+mounts:
+  - id: demo-echo
+    source: demo_cli
+    operation: echo_json
+    command:
+      path: [demo, echo]
+    machine:
+      stable_name: demo.echo
+    help:
+      summary: Echo structured JSON
+      description: Run a local CLI-backed operation and return JSON output.
+      examples:
+        - "cts --config examples/demo/cts.yaml demo echo --text hello --upper --output json"

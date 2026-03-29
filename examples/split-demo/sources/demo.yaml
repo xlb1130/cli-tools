@@ -1,0 +1,7 @@
+sources:
+  demo_cli:
+    type: cli
+    executable: python3
+    discovery:
+      mode: manifest
+      manifest: ../echo-manifest.yaml

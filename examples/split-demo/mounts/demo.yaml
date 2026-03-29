@@ -1,0 +1,11 @@
+mounts:
+  - id: demo-echo
+    source: demo_cli
+    operation: echo_json
+    command:
+      path: [demo, echo]
+    machine:
+      stable_name: demo.echo
+    help:
+      summary: Echo structured JSON from split config
+      description: Run a local CLI-backed operation loaded through imports.
