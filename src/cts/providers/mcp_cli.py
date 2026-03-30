@@ -265,7 +265,7 @@ def _build_bridge_argv(
     command: Optional[str] = None,
 ) -> List[str]:
     action = command or _bridge_command_for_primitive(primitive_type)
-    argv = ["node", str(_bridge_script_path()), action]
+    argv = ["node", str(_bridge_launch_script_path()), action]
 
     if source_config.config_file and source_config.server:
         argv.extend(
@@ -382,6 +382,77 @@ def _bridge_script_path() -> Path:
         if candidate.exists():
             return candidate
     return candidates[0]
+
+
+def _bridge_launch_script_path() -> Path:
+    script_path = _bridge_script_path()
+    if _bridge_dependency_available(script_path):
+        return script_path
+    runtime_dir = _bridge_runtime_root()
+    return _ensure_bridge_runtime(script_path, runtime_dir)
+
+
+def _bridge_dependency_available(script_path: Path) -> bool:
+    return _find_bridge_dependency_dir(script_path) is not None
+
+
+def _find_bridge_dependency_dir(script_path: Path) -> Optional[Path]:
+    current = script_path.parent
+    package_dir = Path("@modelcontextprotocol/sdk")
+    while True:
+        candidate = current / "node_modules" / package_dir
+        if candidate.exists():
+            return current
+        if current.parent == current:
+            return None
+        current = current.parent
+
+
+def _bridge_runtime_root() -> Path:
+    return Path("~/.local/share/cts/node-bridge").expanduser()
+
+
+def _ensure_bridge_runtime(script_path: Path, runtime_dir: Path) -> Path:
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    runtime_script = runtime_dir / script_path.name
+    shutil.copy2(script_path, runtime_script)
+
+    package_json = script_path.with_name("package.json")
+    runtime_package_json = runtime_dir / "package.json"
+    if package_json.exists():
+        shutil.copy2(package_json, runtime_package_json)
+    elif not runtime_package_json.exists():
+        runtime_package_json.write_text(
+            json.dumps(
+                {
+                    "private": True,
+                    "type": "module",
+                    "dependencies": {"@modelcontextprotocol/sdk": "^1.28.0"},
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    if not _bridge_dependency_available(runtime_script):
+        npm = shutil.which("npm")
+        if not npm:
+            raise ProviderError(
+                "MCP bridge requires npm to auto-install '@modelcontextprotocol/sdk', but npm was not found in PATH"
+            )
+        completed = subprocess.run(
+            [npm, "install", "--no-audit", "--no-fund", "--omit=dev"],
+            cwd=runtime_dir,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            error_text = completed.stderr.strip() or completed.stdout.strip() or "npm install failed for MCP bridge runtime"
+            raise ProviderError(f"failed to prepare MCP bridge runtime: {error_text}")
+
+    return runtime_script
 
 
 def _bridge_command_for_primitive(primitive_type: Optional[str]) -> str:

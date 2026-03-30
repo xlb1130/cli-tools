@@ -150,6 +150,8 @@ cts manage source show my-mcp --format json
 - 还是 bridge / node / mcp sdk 依赖缺失
 - 还是 server 配置写进去了，但 discovery 没成功
 
+从当前版本开始，如果走 Node bridge 且本机已有 `node`/`npm`，`cts` 会在首次使用时自动为 bridge runtime 准备 `@modelcontextprotocol/sdk`，默认目录是 `~/.local/share/cts/node-bridge`。
+
 ---
 
 ## 下一步

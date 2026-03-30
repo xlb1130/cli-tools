@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from cts.app import build_app
 from cts.providers import mcp_cli
@@ -6,6 +7,49 @@ from cts.providers import mcp_cli
 
 def test_mcp_bridge_script_path_exists():
     assert mcp_cli._bridge_script_path().exists()
+
+
+def test_bridge_launch_script_path_prefers_existing_node_modules(tmp_path: Path):
+    repo_root = tmp_path / "repo"
+    script_dir = repo_root / "scripts"
+    node_pkg_dir = repo_root / "node_modules" / "@modelcontextprotocol" / "sdk"
+    script_dir.mkdir(parents=True)
+    node_pkg_dir.mkdir(parents=True)
+    script_path = script_dir / "mcp_bridge.mjs"
+    script_path.write_text("console.log('ok')\n", encoding="utf-8")
+
+    assert mcp_cli._bridge_dependency_available(script_path) is True
+    assert mcp_cli._find_bridge_dependency_dir(script_path) == repo_root
+
+
+def test_bridge_launch_script_path_bootstraps_runtime(tmp_path: Path, monkeypatch):
+    source_dir = tmp_path / "site-packages" / "cts" / "scripts"
+    source_dir.mkdir(parents=True)
+    script_path = source_dir / "mcp_bridge.mjs"
+    script_path.write_text("console.log('bridge')\n", encoding="utf-8")
+    (source_dir / "package.json").write_text(
+        '{"private":true,"type":"module","dependencies":{"@modelcontextprotocol/sdk":"^1.28.0"}}\n',
+        encoding="utf-8",
+    )
+    runtime_dir = tmp_path / "runtime"
+    calls = []
+
+    def fake_run(argv, cwd, capture_output, text, check):
+        calls.append((argv, Path(cwd)))
+        (Path(cwd) / "node_modules" / "@modelcontextprotocol" / "sdk").mkdir(parents=True, exist_ok=True)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(mcp_cli, "_bridge_script_path", lambda: script_path)
+    monkeypatch.setattr(mcp_cli, "_bridge_runtime_root", lambda: runtime_dir)
+    monkeypatch.setattr(mcp_cli.shutil, "which", lambda cmd: "/usr/bin/npm" if cmd == "npm" else None)
+    monkeypatch.setattr(mcp_cli.subprocess, "run", fake_run)
+
+    launch_script = mcp_cli._bridge_launch_script_path()
+
+    assert launch_script == runtime_dir / "mcp_bridge.mjs"
+    assert launch_script.exists()
+    assert (runtime_dir / "package.json").exists()
+    assert calls == [(['/usr/bin/npm', 'install', '--no-audit', '--no-fund', '--omit=dev'], runtime_dir)]
 
 
 def test_mcp_live_discovery_compiles_generated_mounts(tmp_path: Path, monkeypatch):
