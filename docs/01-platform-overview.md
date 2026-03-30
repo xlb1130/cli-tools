@@ -243,7 +243,7 @@ Surface 关注“统一能力如何再次被消费”。
 
 ### 6.1 平台内置命令
 
-建议至少包含：
+长期建议至少包含：
 
 - `cts source add|list|show|test|remove`
 - `cts mount add|import|list|show|remove|sync`
@@ -257,6 +257,21 @@ Surface 关注“统一能力如何再次被消费”。
 - `cts cache list|clear`
 - `cts doctor`
 - `cts sync`
+
+按当前代码状态，已经落地的主路径包括：
+
+- `cts source add|list|show|test|remove`
+- `cts mount add|import|list|show|remove`
+- `cts inspect source|operation|mount|drift`
+- `cts invoke <mount-id>`
+- `cts explain <mount-id>`
+- `cts catalog export`
+- `cts serve mcp|http|jsonrpc`
+- `cts auth list|status|validate|login|refresh|logout`
+- `cts doctor`
+- `cts sync`
+
+其中 `cts ui`、`cts cache list|clear`、`cts inspect schema`、`cts mount sync` 仍属于文档中的目标态命令。
 
 ### 6.2 动态挂载命令
 

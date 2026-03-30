@@ -1,0 +1,17 @@
+version: 1
+
+sources:
+  petstore:
+    type: openapi
+    spec:
+      file: ./petstore-mini.yaml
+    discovery:
+      mode: live
+
+mounts:
+  - id: petstore
+    source: petstore
+    select:
+      include: ["*"]
+    command:
+      under: [petstore]

@@ -2,18 +2,18 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import uuid
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from cts.app import build_app
-from cts.execution.logging import emit_app_event
-from cts.execution.runtime import build_error_envelope
-from cts.execution.logging import get_run, list_runs
-from cts.execution.runtime import explain_mount
+from cts.config.management import add_alias, add_mount, add_source, get_source_detail, list_aliases, remove_alias, remove_mount, remove_source
+from cts.execution.logging import emit_app_event, emit_audit_event, get_run, list_runs, record_run, summarize_result, utc_now_iso
+from cts.execution.runtime import build_error_envelope, explain_mount, invoke_mount
 from cts.presentation import (
     build_app_summary,
     build_auth_inventory,
@@ -26,6 +26,7 @@ from cts.presentation import (
     build_mount_help,
     build_plugin_inventory,
     build_provider_inventory,
+    build_reliability_status,
     build_secret_detail,
     build_secret_inventory,
     build_source_check_result,
@@ -158,6 +159,9 @@ class CTSHTTPRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/app/summary":
             return build_app_summary(app)
 
+        if path == "/api/reliability":
+            return build_reliability_status(app)
+
         if path == "/api/auth/profiles":
             return build_auth_inventory(app)
 
@@ -217,7 +221,7 @@ class CTSHTTPRequestHandler(BaseHTTPRequestHandler):
             source = app.config.sources.get(source_name)
             if source is None:
                 raise KeyError(f"source not found: {source_name}")
-            payload = build_source_details(app, source_name, source)
+            payload = get_source_detail(app, source_name)
             payload["health"] = build_source_check_result(app, source_name, source)
             return payload
 
@@ -253,6 +257,9 @@ class CTSHTTPRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/catalog":
             return app.export_catalog()
 
+        if path == "/api/aliases":
+            return list_aliases(app)
+
         if path.startswith("/api/catalog/"):
             mount_id = path.split("/", 3)[3]
             mount = app.catalog.find_by_id(mount_id)
@@ -284,6 +291,42 @@ class CTSHTTPRequestHandler(BaseHTTPRequestHandler):
             if payload is None:
                 raise KeyError(f"run not found: {run_id}")
             return payload
+
+        # Log query APIs
+        if path == "/api/logs/config":
+            from cts.execution.logging import get_config_events
+            limit = int(_first(query, "limit") or 100)
+            before_ts = _first(query, "before_ts")
+            return {"items": get_config_events(app, limit=limit, before_ts=before_ts)}
+
+        if path == "/api/logs/discovery":
+            from cts.execution.logging import get_discovery_events
+            limit = int(_first(query, "limit") or 100)
+            source = _first(query, "source")
+            event_prefix = _first(query, "event_prefix")
+            before_ts = _first(query, "before_ts")
+            return {"items": get_discovery_events(
+                app, limit=limit, source=source, event_prefix=event_prefix, before_ts=before_ts
+            )}
+
+        if path == "/api/logs/app":
+            from cts.execution.logging import list_app_events
+            limit = int(_first(query, "limit") or 100)
+            events = _first(query, "events")
+            events_list = events.split(",") if events else None
+            level = _first(query, "level")
+            source = _first(query, "source")
+            mount_id = _first(query, "mount_id")
+            before_ts = _first(query, "before_ts")
+            return {"items": list_app_events(
+                app,
+                limit=limit,
+                events=events_list,
+                level=level,
+                source=source,
+                mount_id=mount_id,
+                before_ts=before_ts,
+            )}
 
         raise KeyError(f"route not found: {path}")
 
@@ -419,8 +462,118 @@ class CTSHTTPRequestHandler(BaseHTTPRequestHandler):
                 app,
                 mount,
                 raw_input,
-                {"non_interactive": True},
+                {"non_interactive": True, "run_id": str(uuid.uuid4()), "trace_id": str(uuid.uuid4())},
             )
+
+        if path.startswith("/api/mounts/") and path.endswith("/invoke"):
+            mount_id = path[len("/api/mounts/") : -len("/invoke")].strip("/")
+            mount = app.catalog.find_by_id(mount_id)
+            if mount is None:
+                raise KeyError(f"mount not found: {mount_id}")
+            raw_input = payload.get("input", {})
+            if raw_input is None:
+                raw_input = {}
+            if not isinstance(raw_input, dict):
+                raise ValueError("'input' must be a JSON object.")
+            return self._execute_mount_http(app, mount, raw_input, dry_run=bool(payload.get("dry_run", False)))
+
+        if path.startswith("/api/sources/") and path.endswith("/test"):
+            source_name = path[len("/api/sources/") : -len("/test")].strip("/")
+            source = app.config.sources.get(source_name)
+            if source is None:
+                raise KeyError(f"source not found: {source_name}")
+            discover = bool(payload.get("discover"))
+            result = build_source_check_result(app, source_name, source)
+            if discover:
+                sync_result = app.sync(source_name)
+                sync_items = sync_result.get("items", [])
+                result["discovery"] = sync_items[0] if sync_items else {"ok": False, "source": source_name, "operation_count": 0}
+                result["discovery_report_path"] = sync_result.get("report_path")
+                result["capability_snapshot_path"] = sync_result.get("capability_snapshot_path")
+                result["ok"] = bool(result.get("ok", False) and result["discovery"].get("ok", False))
+            return result
+
+        if path == "/api/sources":
+            result = add_source(
+                explicit_config_path=app.explicit_config_path,
+                profile=app.requested_profile,
+                provider_type=str(payload.get("provider_type") or ""),
+                source_name=str(payload.get("source_name") or ""),
+                description=str(payload.get("description") or "") or None,
+                executable=str(payload.get("executable") or "") or None,
+                base_url=str(payload.get("base_url") or "") or None,
+                manifest=str(payload.get("manifest") or "") or None,
+                discover_mode=str(payload.get("discover_mode") or "") or None,
+                auth_ref=str(payload.get("auth_ref") or "") or None,
+                surfaces=list(payload.get("surfaces") or []),
+                enabled=bool(payload.get("enabled", True)),
+            )
+            next_app = self.server.reload_app()
+            result["summary"] = build_app_summary(next_app)
+            return result
+
+        if path.startswith("/api/sources/") and path.endswith("/remove"):
+            source_name = path[len("/api/sources/") : -len("/remove")].strip("/")
+            result = remove_source(
+                explicit_config_path=app.explicit_config_path,
+                profile=app.requested_profile,
+                source_name=source_name,
+                force=bool(payload.get("force", False)),
+            )
+            next_app = self.server.reload_app()
+            result["summary"] = build_app_summary(next_app)
+            return result
+
+        if path == "/api/mounts":
+            result = add_mount(
+                explicit_config_path=app.explicit_config_path,
+                profile=app.requested_profile,
+                source_name=str(payload.get("source_name") or ""),
+                operation_id=str(payload.get("operation_id") or ""),
+                mount_id=str(payload.get("mount_id") or "") or None,
+                command_path=str(payload.get("command_path") or "") or None,
+                stable_name=str(payload.get("stable_name") or "") or None,
+                summary=str(payload.get("summary") or "") or None,
+                description=str(payload.get("description") or "") or None,
+                risk=str(payload.get("risk") or "") or None,
+                surfaces=list(payload.get("surfaces") or []),
+            )
+            next_app = self.server.reload_app()
+            result["summary"] = build_app_summary(next_app)
+            return result
+
+        if path.startswith("/api/mounts/") and path.endswith("/remove"):
+            mount_id = path[len("/api/mounts/") : -len("/remove")].strip("/")
+            result = remove_mount(
+                explicit_config_path=app.explicit_config_path,
+                profile=app.requested_profile,
+                mount_id=mount_id,
+            )
+            next_app = self.server.reload_app()
+            result["summary"] = build_app_summary(next_app)
+            return result
+
+        if path == "/api/aliases":
+            result = add_alias(
+                explicit_config_path=app.explicit_config_path,
+                profile=app.requested_profile,
+                alias_from=str(payload.get("alias_from") or ""),
+                alias_to=str(payload.get("alias_to") or ""),
+            )
+            next_app = self.server.reload_app()
+            result["summary"] = build_app_summary(next_app)
+            return result
+
+        if path.startswith("/api/aliases/") and path.endswith("/remove"):
+            alias_from = path[len("/api/aliases/") : -len("/remove")].strip("/")
+            result = remove_alias(
+                explicit_config_path=app.explicit_config_path,
+                profile=app.requested_profile,
+                alias_from=unquote(alias_from),
+            )
+            next_app = self.server.reload_app()
+            result["summary"] = build_app_summary(next_app)
+            return result
 
         raise KeyError(f"route not found: {path}")
 
@@ -458,6 +611,70 @@ class CTSHTTPRequestHandler(BaseHTTPRequestHandler):
 
         hook_payload.setdefault("runtime", {})
         return event, hook_payload
+
+    def _execute_mount_http(self, app: Any, mount: Any, raw_input: Dict[str, Any], *, dry_run: bool) -> Dict[str, Any]:
+        run_id = str(uuid.uuid4())
+        trace_id = str(uuid.uuid4())
+        started_at = utc_now_iso()
+        app.ensure_mount_execution_allowed(mount, mode="invoke", run_id=run_id, trace_id=trace_id)
+        emit_app_event(
+            app,
+            event="invoke_start",
+            run_id=run_id,
+            trace_id=trace_id,
+            source=mount.source_name,
+            mount_id=mount.mount_id,
+            operation_id=mount.operation.id,
+            data={"args": raw_input, "provider_type": mount.provider_type, "surface": "http", "dry_run": dry_run},
+        )
+        result = invoke_mount(
+            app,
+            mount,
+            raw_input,
+            {"run_id": run_id, "trace_id": trace_id, "non_interactive": True, "dry_run": dry_run},
+        )
+        emit_app_event(
+            app,
+            event="invoke_complete",
+            run_id=run_id,
+            trace_id=trace_id,
+            source=mount.source_name,
+            mount_id=mount.mount_id,
+            operation_id=mount.operation.id,
+            data={"result": summarize_result(result), "surface": "http", "dry_run": dry_run},
+        )
+        emit_audit_event(
+            app,
+            event="invoke_complete",
+            run_id=run_id,
+            trace_id=trace_id,
+            source=mount.source_name,
+            mount_id=mount.mount_id,
+            operation_id=mount.operation.id,
+            data={"ok": result.get("ok"), "risk": mount.operation.risk, "provider_type": mount.provider_type, "surface": "http"},
+        )
+        record_run(
+            app,
+            {
+                "run_id": run_id,
+                "trace_id": trace_id,
+                "ts_start": started_at,
+                "ts_end": utc_now_iso(),
+                "surface": "http",
+                "mode": "invoke",
+                "ok": result.get("ok", False),
+                "exit_code": 0 if result.get("ok") else 6,
+                "profile": app.active_profile,
+                "mount_id": mount.mount_id,
+                "stable_name": mount.stable_name,
+                "source": mount.source_name,
+                "operation_id": mount.operation.id,
+                "provider_type": mount.provider_type,
+                "summary": mount.summary or mount.operation.title,
+                "metadata": {"result": summarize_result(result), "dry_run": dry_run},
+            },
+        )
+        return result
 
     def _write_json(self, payload: Dict[str, Any], status: HTTPStatus) -> None:
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
@@ -520,7 +737,7 @@ def _first(query: Dict[str, list[str]], key: str) -> Optional[str]:
 
 
 def default_ui_dist_dir() -> Path:
-    return Path(__file__).resolve().parents[3] / "frontend" / "app" / "dist"
+    return Path(__file__).resolve().parents[1] / "ui_dist"
 
 
 def _is_subpath(path: Path, base: Path) -> bool:

@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from types import SimpleNamespace
 
 from cts.reliability import (
     BackoffConfig,
@@ -37,6 +38,7 @@ from cts.reliability import (
     merge_reliability_config,
     should_retry_for_risk,
 )
+from cts.execution.runtime import _get_reliability_manager
 
 
 class TestBackoffConfig:
@@ -760,6 +762,26 @@ class TestReliabilityManager:
         assert "rate_limits" in status
         assert "concurrency" in status
         assert "idempotency" in status
+
+    def test_runtime_manager_uses_app_defaults_and_budgets(self, tmp_path: Path):
+        defaults = GlobalReliabilityDefaults(
+            timeout_seconds=12,
+            concurrency=ConcurrencyConfig(max_inflight_global=7, max_inflight_per_source=3),
+        )
+        budget = RateLimitBudget(requests_per_minute=42)
+        app = SimpleNamespace(
+            config=SimpleNamespace(
+                get_reliability_defaults=lambda: defaults,
+                get_rate_limit_budgets=lambda: {"demo": budget},
+            ),
+            primary_config_dir=tmp_path,
+        )
+
+        manager = _get_reliability_manager(app)
+
+        assert manager.global_defaults.timeout_seconds == 12
+        assert manager.concurrency_manager.config.max_inflight_global == 7
+        assert manager.rate_limit_manager._budgets["demo"].requests_per_minute == 42
 
 
 # Note: Async tests require pytest-asyncio to be installed.

@@ -1,0 +1,29 @@
+version: 1
+
+sources:
+  demo_http:
+    type: http
+    base_url: https://api.example.com
+    headers:
+      Accept: application/json
+    operations:
+      get_issue:
+        title: Get Issue
+        description: Fetch one issue from an HTTP API.
+        input_schema:
+          type: object
+          required: [key]
+          properties:
+            key:
+              type: string
+        provider_config:
+          method: GET
+          path: /issues/{key}
+          path_params: [key]
+
+mounts:
+  - id: issue-get
+    source: demo_http
+    operation: get_issue
+    command:
+      path: [issue, get]

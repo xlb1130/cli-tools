@@ -15,6 +15,7 @@ def build_app_summary(app) -> Dict[str, Any]:
     surfaces = _summarize_surfaces(app)
     auth_summary = app.auth_manager.build_summary()
     secret_summary = app.secret_manager.build_summary()
+    reliability_summary = build_reliability_summary(app)
     return {
         "app": app.config.app.name,
         "profile": app.active_profile,
@@ -25,6 +26,7 @@ def build_app_summary(app) -> Dict[str, Any]:
         "hook_count": len(app.config.hooks),
         "secrets": secret_summary,
         "auth": auth_summary,
+        "reliability": reliability_summary,
         "plugin_provider_conflicts": app.plugin_manager.provider_conflicts,
         "surfaces": surfaces,
         "runtime_paths": {
@@ -37,6 +39,37 @@ def build_app_summary(app) -> Dict[str, Any]:
             "capability_snapshot_dir": str(discovery_paths.capability_snapshot_dir),
         },
         "discovery_error_count": len(app.discovery_errors),
+    }
+
+
+def build_reliability_status(app) -> Dict[str, Any]:
+    from cts.execution.runtime import _get_reliability_manager
+
+    manager = _get_reliability_manager(app)
+    status = manager.get_status()
+    defaults = app.config.get_reliability_defaults() if hasattr(app, "config") and app.config else None
+    budgets = app.config.get_rate_limit_budgets() if hasattr(app, "config") and app.config else {}
+
+    return {
+        "defaults": defaults.model_dump(mode="json") if defaults else None,
+        "configured_budget_count": len(budgets),
+        "configured_budgets": {key: budget.model_dump(mode="json") for key, budget in budgets.items()},
+        "status": status,
+    }
+
+
+def build_reliability_summary(app) -> Dict[str, Any]:
+    payload = build_reliability_status(app)
+    status = payload["status"]
+    rate_limits = status.get("rate_limits", {})
+    concurrency = status.get("concurrency", {})
+    idempotency = status.get("idempotency", {})
+
+    return {
+        "configured_budget_count": payload.get("configured_budget_count", 0),
+        "active_rate_limiters": len(rate_limits),
+        "active_concurrency_scopes": len(concurrency),
+        "tracked_idempotency_keys": int(idempotency.get("total_records", 0) or 0),
     }
 
 

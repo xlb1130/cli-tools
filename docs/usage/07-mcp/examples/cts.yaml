@@ -1,0 +1,18 @@
+version: 1
+
+sources:
+  my_mcp:
+    type: mcp
+    adapter: mcp-cli
+    config_file: ./mcp-servers.json
+    server: my-mcp
+    discovery:
+      mode: live
+
+mounts:
+  - id: my-mcp
+    source: my_mcp
+    select:
+      include: ["*"]
+    command:
+      under: [my]

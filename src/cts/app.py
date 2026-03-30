@@ -113,6 +113,12 @@ class Catalog:
     def find_by_path(self, path: Iterable[str]) -> Optional[MountRecord]:
         return self._path_index.get(tuple(path))
 
+    def find_by_source_and_operation(self, source_name: str, operation_id: str) -> Optional[MountRecord]:
+        for mount in self.mounts:
+            if mount.source_name == source_name and mount.operation.id == operation_id:
+                return mount
+        return None
+
     def has_group(self, prefix: Iterable[str]) -> bool:
         prefix_tuple = tuple(prefix)
         for path in self._path_index:

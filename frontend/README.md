@@ -92,10 +92,18 @@ npm run build
 cts --config <your-config> serve http --ui
 ```
 
+构建产物默认会输出到 `src/cts/ui_dist`，便于随 Python 包一起发布。
+
+如果希望启动后自动打开浏览器：
+
+```bash
+cts --config <your-config> serve http --ui --open
+```
+
 也支持显式指定静态目录：
 
 ```bash
-cts --config <your-config> serve http --ui-dir frontend/app/dist
+cts --config <your-config> serve http --ui-dir src/cts/ui_dist
 ```
 
 执行后：
@@ -103,6 +111,7 @@ cts --config <your-config> serve http --ui-dir frontend/app/dist
 - Python 后端读取配置与 catalog
 - 启动本地 API
 - 如果传入 `--ui` 或 `--ui-dir`，同时托管前端静态资源
+- `cts` 会输出 `base_url` 和 `browser_url`
 - 浏览器打开本地页面
 
 ## 文档索引

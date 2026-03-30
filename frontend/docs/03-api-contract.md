@@ -173,16 +173,17 @@ POST /api/sync/{source}
 
 ## 3.9 Logs
 
-后续建议增加：
+当前已实现的相关查询接口：
 
 ```http
-GET /api/logs/runs
-GET /api/logs/runs/{run_id}
+GET /api/runs
+GET /api/runs/{run_id}
 GET /api/logs/config
-GET /api/logs/sync
+GET /api/logs/discovery
+GET /api/logs/app
 ```
 
-第一版可以先不实现完整日志查询接口，但后端日志结构应先定下来。
+第一版仍然没有完整日志中心，但 run history、配置日志、discovery 日志和 app 事件查询已经有 northbound 入口。
 
 ## 3.10 Extensions / Debug
 

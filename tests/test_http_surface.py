@@ -128,10 +128,19 @@ def test_http_surface_readonly_routes():
         summary = httpx.get(f"{base_url}/api/app/summary", timeout=5.0)
         assert summary.status_code == 200
         assert summary.json()["app"] == "cts"
+        assert "reliability" in summary.json()
 
         sources = httpx.get(f"{base_url}/api/sources", timeout=5.0)
         assert sources.status_code == 200
         assert sources.json()["items"][0]["name"] == "demo_cli"
+
+        reliability = httpx.get(f"{base_url}/api/reliability", timeout=5.0)
+        assert reliability.status_code == 200
+        reliability_payload = reliability.json()
+        assert "status" in reliability_payload
+        assert "rate_limits" in reliability_payload["status"]
+        assert "concurrency" in reliability_payload["status"]
+        assert "idempotency" in reliability_payload["status"]
 
         mounts = httpx.get(f"{base_url}/api/mounts?q=demo", timeout=5.0)
         assert mounts.status_code == 200
@@ -140,6 +149,19 @@ def test_http_surface_readonly_routes():
         mount_detail = httpx.get(f"{base_url}/api/mounts/demo-echo", timeout=5.0)
         assert mount_detail.status_code == 200
         assert mount_detail.json()["stable_name"] == "demo.echo"
+
+        source_detail = httpx.get(f"{base_url}/api/sources/demo_cli", timeout=5.0)
+        assert source_detail.status_code == 200
+        assert source_detail.json()["name"] == "demo_cli"
+
+        source_test = httpx.post(
+            f"{base_url}/api/sources/demo_cli/test",
+            json={"discover": False},
+            timeout=5.0,
+        )
+        assert source_test.status_code == 200
+        assert source_test.json()["source"] == "demo_cli"
+        assert "ok" in source_test.json()
 
         mount_help = httpx.get(f"{base_url}/api/mounts/demo-echo/help", timeout=5.0)
         assert mount_help.status_code == 200
@@ -153,6 +175,16 @@ def test_http_surface_readonly_routes():
         assert explain.status_code == 200
         assert explain.json()["operation_id"] == "echo_json"
 
+        invoke = httpx.post(
+            f"{base_url}/api/mounts/demo-echo/invoke",
+            json={"input": {"text": "hello"}},
+            timeout=5.0,
+        )
+        assert invoke.status_code == 200
+        assert invoke.json()["ok"] is True
+        assert invoke.json()["operation_id"] == "echo_json"
+        assert invoke.json()["run_id"]
+
         bad_explain = httpx.post(
             f"{base_url}/api/mounts/demo-echo/explain",
             json={"input": "not-an-object"},
@@ -160,6 +192,14 @@ def test_http_surface_readonly_routes():
         )
         assert bad_explain.status_code == 400
         assert bad_explain.json()["ok"] is False
+
+        bad_invoke = httpx.post(
+            f"{base_url}/api/mounts/demo-echo/invoke",
+            json={"input": "not-an-object"},
+            timeout=5.0,
+        )
+        assert bad_invoke.status_code == 400
+        assert bad_invoke.json()["ok"] is False
 
         not_found = httpx.get(f"{base_url}/api/mounts/nope", timeout=5.0)
         assert not_found.status_code == 404
@@ -294,6 +334,57 @@ mounts:
         assert catalog_payload["drift_summary"]["severity"] == "additive"
         assert catalog_payload["mounts"][0]["drift_state"]["status"] == "accepted"
         assert catalog_payload["mounts"][0]["drift_state"]["action"] == "auto_accept"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_http_surface_management_routes_can_add_and_remove_source(tmp_path: Path):
+    config_path = tmp_path / "cts.yaml"
+    config_path.write_text(
+        """
+version: 1
+sources: {}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    app = build_app(str(config_path))
+    server = create_http_server(app, host="127.0.0.1", port=0)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        host, port = server.server_address
+        base_url = f"http://{host}:{port}"
+
+        create_response = httpx.post(
+            f"{base_url}/api/sources",
+            json={
+                "provider_type": "cli",
+                "source_name": "demo_cli",
+                "description": "Demo source",
+                "executable": "python3",
+                "surfaces": ["cli", "invoke"],
+            },
+            timeout=5.0,
+        )
+        assert create_response.status_code == 200
+        assert create_response.json()["source_name"] == "demo_cli"
+
+        sources_response = httpx.get(f"{base_url}/api/sources", timeout=5.0)
+        assert sources_response.status_code == 200
+        assert any(item["name"] == "demo_cli" for item in sources_response.json()["items"])
+
+        remove_response = httpx.post(f"{base_url}/api/sources/demo_cli/remove", json={"force": True}, timeout=5.0)
+        assert remove_response.status_code == 200
+        assert remove_response.json()["source_name"] == "demo_cli"
+
+        sources_after = httpx.get(f"{base_url}/api/sources", timeout=5.0)
+        assert sources_after.status_code == 200
+        assert not any(item["name"] == "demo_cli" for item in sources_after.json()["items"])
     finally:
         server.shutdown()
         server.server_close()

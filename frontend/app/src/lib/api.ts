@@ -1,8 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type {
+  AliasListResponse,
+  AliasMutationResponse,
+  AliasRecord,
   AppSummary,
+  AuthActionResponse,
+  AuthInventoryResponse,
+  AuthProfileStatus,
   CatalogResponse,
+  DriftReport,
   ExtensionEvent,
   ExtensionEventsResponse,
   ExplainResponse,
@@ -11,15 +18,22 @@ import type {
   HookDispatchExplainResponse,
   HookDispatchSimulateResponse,
   HookContract,
+  InvokeResponse,
+  LogEvent,
+  LogResponse,
   MountDetail,
   MountHelp,
+  MountMutationResponse,
   MountSummary,
   PluginDetail,
   ProviderInventoryItem,
+  ReliabilityStatusPayload,
   ReloadResponse,
   RunRecord,
   SourceDetail,
+  SourceMutationResponse,
   SourceSummary,
+  SourceTestResponse,
   SyncResponse,
 } from "./types";
 
@@ -37,6 +51,38 @@ export function useAppSummary() {
   return useQuery({
     queryKey: ["app-summary"],
     queryFn: () => request<AppSummary>("/api/app/summary"),
+  });
+}
+
+export function useReliabilityStatus() {
+  return useQuery({
+    queryKey: ["reliability-status"],
+    queryFn: () => request<ReliabilityStatusPayload>("/api/reliability"),
+  });
+}
+
+export function useAuthProfiles() {
+  return useQuery({
+    queryKey: ["auth-profiles"],
+    queryFn: () => request<AuthInventoryResponse>("/api/auth/profiles"),
+  });
+}
+
+export function useAuthProfile(name: string) {
+  return useQuery({
+    queryKey: ["auth-profile", name],
+    queryFn: () => request<AuthProfileStatus>(`/api/auth/profiles/${encodeURIComponent(name)}`),
+    enabled: Boolean(name),
+  });
+}
+
+export function useAliases() {
+  return useQuery({
+    queryKey: ["aliases"],
+    queryFn: async () => {
+      const payload = await request<AliasListResponse>("/api/aliases");
+      return payload.items;
+    },
   });
 }
 
@@ -139,6 +185,29 @@ export function useSource(sourceName: string) {
   });
 }
 
+export function useTestSource() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ sourceName, discover }: { sourceName: string; discover: boolean }) =>
+      request<SourceTestResponse>(`/api/sources/${encodeURIComponent(sourceName)}/test`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ discover }),
+      }),
+    onSuccess: async (_, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["sources"] }),
+        queryClient.invalidateQueries({ queryKey: ["source", variables.sourceName] }),
+        queryClient.invalidateQueries({ queryKey: ["catalog"] }),
+        queryClient.invalidateQueries({ queryKey: ["drift-report"] }),
+      ]);
+    },
+  });
+}
+
 export function useMounts(filters?: { q?: string; risk?: string; source?: string; surface?: string }) {
   return useQuery({
     queryKey: ["mounts", filters],
@@ -179,11 +248,70 @@ export function useCatalog() {
   });
 }
 
+export function useDriftReport(sourceName?: string) {
+  return useQuery({
+    queryKey: ["drift-report", sourceName],
+    queryFn: () => request<DriftReport>(sourceName ? `/api/drift/${encodeURIComponent(sourceName)}` : "/api/drift"),
+    enabled: sourceName !== "",
+  });
+}
+
 export function useRuns(limit = 20) {
   return useQuery({
     queryKey: ["runs", limit],
     queryFn: async () => {
       const payload = await request<{ items: RunRecord[] }>(`/api/runs?limit=${limit}`);
+      return payload.items;
+    },
+  });
+}
+
+export function useConfigLogs(limit = 50, beforeTs?: string) {
+  return useQuery({
+    queryKey: ["config-logs", limit, beforeTs],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (beforeTs) params.set("before_ts", beforeTs);
+      const payload = await request<LogResponse>(`/api/logs/config?${params.toString()}`);
+      return payload.items;
+    },
+  });
+}
+
+export function useDiscoveryLogs(filters?: { limit?: number; source?: string; eventPrefix?: string; beforeTs?: string }) {
+  return useQuery({
+    queryKey: ["discovery-logs", filters],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("limit", String(filters?.limit ?? 50));
+      if (filters?.source) params.set("source", filters.source);
+      if (filters?.eventPrefix) params.set("event_prefix", filters.eventPrefix);
+      if (filters?.beforeTs) params.set("before_ts", filters.beforeTs);
+      const payload = await request<LogResponse>(`/api/logs/discovery?${params.toString()}`);
+      return payload.items;
+    },
+  });
+}
+
+export function useAppLogs(filters?: {
+  limit?: number;
+  events?: string;
+  level?: string;
+  source?: string;
+  mountId?: string;
+  beforeTs?: string;
+}) {
+  return useQuery({
+    queryKey: ["app-logs", filters],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("limit", String(filters?.limit ?? 50));
+      if (filters?.events) params.set("events", filters.events);
+      if (filters?.level) params.set("level", filters.level);
+      if (filters?.source) params.set("source", filters.source);
+      if (filters?.mountId) params.set("mount_id", filters.mountId);
+      if (filters?.beforeTs) params.set("before_ts", filters.beforeTs);
+      const payload = await request<LogResponse>(`/api/logs/app?${params.toString()}`);
       return payload.items;
     },
   });
@@ -207,6 +335,27 @@ export function useExplainMount(mountId: string) {
         },
         body: JSON.stringify({ input }),
       }),
+  });
+}
+
+export function useInvokeMount(mountId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ input, dryRun }: { input: Record<string, unknown>; dryRun?: boolean }) =>
+      request<InvokeResponse>(`/api/mounts/${mountId}/invoke`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ input, dry_run: Boolean(dryRun) }),
+      }),
+    onSuccess: async (payload) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["runs"] }),
+        queryClient.invalidateQueries({ queryKey: ["run", payload.run_id] }),
+      ]);
+    },
   });
 }
 
@@ -288,6 +437,76 @@ export function useReloadApp() {
   });
 }
 
+export function useAuthLogin() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      request<AuthActionResponse>("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: async (_, variables) => {
+      const profileName = typeof variables.name === "string" ? variables.name : undefined;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["auth-profiles"] }),
+        queryClient.invalidateQueries({ queryKey: ["app-summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["sources"] }),
+        profileName ? queryClient.invalidateQueries({ queryKey: ["auth-profile", profileName] }) : Promise.resolve(),
+      ]);
+    },
+  });
+}
+
+export function useAuthRefresh() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (name: string) =>
+      request<AuthActionResponse>(`/api/auth/refresh/${encodeURIComponent(name)}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      }),
+    onSuccess: async (_, name) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["auth-profiles"] }),
+        queryClient.invalidateQueries({ queryKey: ["app-summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["sources"] }),
+        queryClient.invalidateQueries({ queryKey: ["auth-profile", name] }),
+      ]);
+    },
+  });
+}
+
+export function useAuthLogout() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (name: string) =>
+      request<AuthActionResponse>(`/api/auth/logout/${encodeURIComponent(name)}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      }),
+    onSuccess: async (_, name) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["auth-profiles"] }),
+        queryClient.invalidateQueries({ queryKey: ["app-summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["sources"] }),
+        queryClient.invalidateQueries({ queryKey: ["auth-profile", name] }),
+      ]);
+    },
+  });
+}
+
 export function useSyncAll() {
   const queryClient = useQueryClient();
 
@@ -314,5 +533,109 @@ export function useSyncAll() {
         queryClient.invalidateQueries({ queryKey: ["catalog"] }),
       ]);
     },
+  });
+}
+
+function invalidateManagementQueries(queryClient: ReturnType<typeof useQueryClient>) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["app-summary"] }),
+    queryClient.invalidateQueries({ queryKey: ["sources"] }),
+    queryClient.invalidateQueries({ queryKey: ["mounts"] }),
+    queryClient.invalidateQueries({ queryKey: ["catalog"] }),
+    queryClient.invalidateQueries({ queryKey: ["aliases"] }),
+    queryClient.invalidateQueries({ queryKey: ["drift-report"] }),
+  ]);
+}
+
+export function useAddSource() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      request<SourceMutationResponse>("/api/sources", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: async () => invalidateManagementQueries(queryClient),
+  });
+}
+
+export function useRemoveSource() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sourceName, force }: { sourceName: string; force: boolean }) =>
+      request<SourceMutationResponse>(`/api/sources/${encodeURIComponent(sourceName)}/remove`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ force }),
+      }),
+    onSuccess: async () => invalidateManagementQueries(queryClient),
+  });
+}
+
+export function useAddMount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      request<MountMutationResponse>("/api/mounts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: async () => invalidateManagementQueries(queryClient),
+  });
+}
+
+export function useRemoveMount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (mountId: string) =>
+      request<MountMutationResponse>(`/api/mounts/${encodeURIComponent(mountId)}/remove`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      }),
+    onSuccess: async () => invalidateManagementQueries(queryClient),
+  });
+}
+
+export function useAddAlias() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { aliasFrom: string; aliasTo: string }) =>
+      request<AliasMutationResponse>("/api/aliases", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          alias_from: payload.aliasFrom,
+          alias_to: payload.aliasTo,
+        }),
+      }),
+    onSuccess: async () => invalidateManagementQueries(queryClient),
+  });
+}
+
+export function useRemoveAlias() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (aliasFrom: string) =>
+      request<AliasMutationResponse>(`/api/aliases/${encodeURIComponent(aliasFrom)}/remove`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      }),
+    onSuccess: async () => invalidateManagementQueries(queryClient),
   });
 }

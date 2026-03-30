@@ -1,0 +1,16 @@
+version: 1
+
+sources:
+  github_gql:
+    type: graphql
+    endpoint: https://api.example.com/graphql
+    schema:
+      introspection: live
+
+mounts:
+  - id: github-gql
+    source: github_gql
+    select:
+      include: ["*"]
+    command:
+      under: [gql]

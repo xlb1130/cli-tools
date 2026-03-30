@@ -1,7 +1,7 @@
 # 当前实现状态与分阶段开发计划
 
 - Status: Working Draft
-- Snapshot Date: 2026-03-29
+- Snapshot Date: 2026-03-30
 - Scope: 对照当前仓库代码与现有 RFC/专题文档，给出“已完成 / 未完成 / 下一阶段”的实际落地视图
 
 ## 1. 这份文档解决什么问题
@@ -18,7 +18,7 @@
 
 ## 2. 当前已经完成的基础能力
 
-截至 2026-03-29，当前仓库已经具备以下可运行能力。
+截至 2026-03-30，当前仓库已经具备以下可运行能力。
 
 ### 2.1 配置与编译链路
 
@@ -38,14 +38,20 @@
 - 已形成 `source -> operation -> mount -> dynamic command` 的基本编译链
 - 支持 `mount.id` 稳定入口
 - 支持 `cts source add`
+- 支持 `cts source show|test|remove`
 - 支持 `cts mount add`
+- 支持 `cts mount show|remove|import`
 - 支持 `cts alias list|add|remove`
 - 支持 `cts invoke <mount-id>`
 - 支持 `cts explain <mount-id>`
 - 支持 `cts inspect mount|source|operation`
+- 支持 `cts inspect drift`
 - 支持 `cts catalog export`
 - 支持 `cts sync`
+- 支持 `cts reconcile drift`
 - 支持 `cts doctor`
+- 支持 `cts docs`
+- 支持 `cts workflow list|execute`
 - 支持动态命令生成
 - 支持动态命令 `--help`
 - 支持 `cts completion script --shell <bash|zsh|fish>`
@@ -58,6 +64,7 @@
 - 已支持独立 `secret` 基础层与统一 secret manager
 - 已支持 `env` / `file` / `literal` secret provider
 - 已支持 `cts secret list|show`
+- 已支持 auth session store 与 `cts auth list|status|login|refresh|logout|validate`
 - 已支持 HTTP `/api/secrets` / `/api/secrets/{name}`
 
 ### 2.3 Plugin / Hook 扩展基础
@@ -123,7 +130,7 @@
 当前 CLI 已可运行，但离文档里定义的 MVP 命令集还有缺口：
 
 - `inspect` 已能展示 origin file，但 profile 解析结果、surface 暴露决策还不完整
-- `source remove` / `mount remove` / `mount import` 还未实现
+- `source remove` / `mount remove` / `mount import` 已实现，但批量治理与更强的冲突提示仍然偏薄
 - `alias` 目前只有基础 `list|add|remove`，还没有冲突清理、批量迁移、兼容期治理命令
 - shell completion 已支持 script 导出，但还没有 install/bootstrap 命令
 
@@ -241,15 +248,18 @@
 - `secret` / `auth` / explain dry-run 请求中的敏感头与字段已脱敏
 - `doctor` 中的 runtime path 输出
 - hook failure warning 日志
+- 配置加载日志
+- discovery / schema import 日志
+- HTTP `/api/logs/config`
+- HTTP `/api/logs/discovery`
+- HTTP `/api/logs/app`
 
 但仍然缺少：
 
-- 配置加载日志
-- discovery / schema import 日志
 - 更细粒度的 help compile 日志治理
-- 前端可查询日志接口
+- 专门的前端日志页面与更完整筛选/详情交互
 
-虽然 `run_id` / `trace_id` 现在已经能进入执行日志和 run history，但配置、sync、前端查询等链路还没有完全接齐。
+虽然 `run_id` / `trace_id` 现在已经能进入执行日志和 run history，且 HTTP 已可查询部分日志，但前端日志视图和更稳定的查询合同还没有完全接齐。
 
 ### 3.5 错误模型已完成第一版合同，但还不完整
 
@@ -311,20 +321,24 @@
 - 当前适合手工执行和开发验证
 - 不适合高频自动化或存在写操作风险的生产场景
 
-### 3.7 Auth 生命周期还没有真正开始
+### 3.7 Auth 生命周期已进入 MVP，但还没有形成完整 delegated auth 平台
 
-当前只有 `auth status` 读取配置，没有形成真正的 auth 子系统。
+当前已经有：
+
+- auth session store
+- `cts auth list|status|login|refresh|logout|validate`
+- HTTP `/api/auth/profiles`
+- HTTP `POST /api/auth/login|refresh|logout`
+- source 与 auth profile 的基础凭证解析
+- auth 过期检测与基础恢复建议
 
 未完成项包括：
 
-- auth session store
 - keyring / file store
-- validate / refresh / revoke
 - OAuth2 / device flow
 - CLI delegated auth session
-- source 与 auth profile 的统一凭证解析
-- auth 过期检测
-- auth 诊断与恢复建议
+- 更完整的 delegated auth provider 合同
+- 更细粒度的多账号/多环境治理
 
 ### 3.8 版本治理、兼容性、迁移、drift 仍未形成闭环
 
@@ -342,14 +356,14 @@
 
 这是中长期必须补的能力，因为 `cts` 的核心不是“一次接入”，而是“长期可维护”。
 
-### 3.9 Northbound surface 还没开始做
+### 3.9 Northbound surface 已进入可运行 MVP，但还不是完整平台合同
 
-当前已经有 southbound provider，也有 CLI / invoke 这种本地 northbound 入口，但文档中的 northbound surface 还没有真正实现：
+当前已经有：
 
-- `cts serve http` 已有最小只读实现
-- `cts serve jsonrpc` 未实现
-- `cts serve mcp` 未实现
-- 前端后端 API 已有第一批只读接口：
+- `cts serve http`
+- `cts serve jsonrpc`
+- `cts serve mcp`
+- 前端后端 API 已有一批只读接口：
   - `/api/app/summary`
   - `/api/sources`
   - `/api/mounts`
@@ -358,16 +372,31 @@
   - `/api/mounts/{id}/explain`
   - `/api/catalog`
   - `/api/runs`
+- 已有扩展调试接口：
+  - `/api/extensions/summary`
+  - `/api/extensions/plugins`
+  - `/api/extensions/providers`
+  - `/api/extensions/hooks`
+  - `/api/extensions/contracts`
+  - `/api/extensions/events`
+- 已有日志与治理只读接口：
+  - `/api/drift`
+  - `/api/logs/config`
+  - `/api/logs/discovery`
+  - `/api/logs/app`
 - 已有第一批轻交互接口：
   - `POST /api/reload`
   - `POST /api/sync`
   - `POST /api/sync/{source}`
-- `cts ui` 未实现
+- `POST /api/extensions/hooks/explain`
+- `POST /api/extensions/hooks/simulate`
+- `cts ui` 已实现，可启动 HTTP API 并托管内置 UI
 
 结论：
 
 - 当前可作为统一本地 CLI
-- 已经开始具备“被其他程序或前端复用的平台服务”雏形，但离完整 northbound 平台还有明显距离
+- 也已经具备 HTTP / JSON-RPC / MCP 三类 northbound 雏形
+- 但离稳定、统一、长期可依赖的平台合同还有明显距离
 
 ### 3.10 前端目录已进入 MVP 实现态
 
@@ -375,19 +404,24 @@
 
 - 方案文档
 - `frontend/app` React + TypeScript + Vite 工程
-- Dashboard / Sources / Mounts / Mount Detail / Catalog / Runs 页面
+- Dashboard / Sources / Source Detail / Mounts / Mount Detail / Catalog / Runs / Run Detail 页面
+- Extensions 页面
+- Auth / Drift / Logs / Alias 页面
 - 对 `/api/*` 的只读接入
 - Mount 详情页 explain 面板
 - Dashboard 的 reload / sync 按钮
+- Sources / Mounts / Aliases / Auth 已有第一批轻交互管理入口
 - `npm run build` 可通过
 - `cts serve http --ui` 可托管构建产物
+- `cts serve http --ui --open` 可直接打开浏览器
 
 当前还没有：
 
-- 写操作 UI
 - explain 历史与交互式表单生成
-- 自动打开浏览器
-- 更完整的日志详情与筛选能力
+- mount 直接执行入口与执行结果治理 UI
+- 更完整的日志中心能力，包括分页、聚合、跨页面联动与更细粒度筛选
+- reliability / secrets 等专门页面
+- source / mount / run 与 drift / logs / explain 的更深联动
 
 ### 3.11 Workflow / plugin / 生态扩展层已启动，但离可治理生态还很远
 
@@ -398,12 +432,14 @@
 - config-driven hook binding
 - hook ordering / filtering / fail_mode 治理
 - provider conflict 记录
+- workflow CLI 与 JSON-RPC 执行入口
+- docs generator CLI
 
 以下能力仍处于 RFC 或 foundation 阶段：
 
 - 外部 plugin protocol
 - plugin packaging / version gate / capability declaration
-- workflow / composite operation
+- workflow DAG / parallel_groups / 更完整 composite operation
 - docs generator
 - capability registry UI
 - streaming / async job / batch 模型
@@ -459,7 +495,7 @@
 
 当前状态：
 
-- 该阶段已基本完成，但仍缺 `remove/import`、completion install/bootstrap、help snapshot 等产品化收尾项
+- 该阶段已基本完成，但仍缺 completion install/bootstrap、help snapshot、inspect/help 细节补全等产品化收尾项
 
 粗略工作量：
 
@@ -577,8 +613,8 @@
 - plugin packaging / versioning / capability declaration
 - docs generator
 - shell completion
-- `serve jsonrpc`
-- `serve mcp`
+- `cts ui`
+- 前端 auth / drift / logs 治理页面
 
 可后置的高级能力：
 
@@ -630,9 +666,9 @@
 
 当前 `cts` 已经完成了“统一能力平面的可运行骨架”，并且已经进入 plugin/hook foundation 阶段。下一步最合理的方向是：
 
-1. 在现有 plugin/hook foundation 上补 discovery/import/cache。
-2. 再补日志、错误、auth、reliability、drift 治理层。
-3. 再把稳定后端开放给更多 northbound surface 和前端控制台。
-4. 最后再推进外部 plugin protocol、workflow 与生态层。
+1. 在现有 plugin/hook foundation 上继续补 discovery/import/cache 与 drift 治理。
+2. 再补日志、错误、auth、reliability 的稳定合同。
+3. 再把现有 HTTP / JSON-RPC / MCP surface 和前端控制台做成更稳定的平台入口。
+4. 最后再推进外部 plugin protocol、workflow 深化与生态层。
 
 这样后面无论继续接 API、CLI、MCP、plugin，都会是增量扩展，而不是返工重构。

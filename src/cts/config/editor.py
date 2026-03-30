@@ -217,9 +217,14 @@ def _resolve_target_path(
 
 
 def _default_new_target(validation_reference: Optional[Path]) -> Path:
+    """Return default target path for new config files.
+    
+    Uses user home directory ~/.cts/config.yaml as the default location.
+    """
     if validation_reference is not None:
         return validation_reference
-    return (Path.cwd() / ".cts" / "config.yaml").resolve()
+    # Default to user home directory
+    return (Path.home() / ".cts" / "config.yaml").resolve()
 
 
 def _read_raw(path: Path) -> Dict[str, Any]:

@@ -1,6 +1,9 @@
+import { Link } from "react-router-dom";
+
 import { ErrorState } from "../components/ErrorState";
 import { LoadingState } from "../components/LoadingState";
 import { Panel } from "../components/Panel";
+import { PageTitle } from "../components/PageTitle";
 import { useRuns } from "../lib/api";
 import { formatDate } from "../lib/format";
 
@@ -19,10 +22,21 @@ export function RunsPage() {
 
   return (
     <div className="page-stack">
+      <section className="hero">
+        <div>
+          <PageTitle
+            icon="runs"
+            eyebrow="Runs"
+            title="Run history 与单次执行追踪"
+            description="先看历史列表，再进入单条 run 详情。这里承接的是运行时最小留痕和排障跳转入口。"
+          />
+        </div>
+      </section>
+
       <Panel title="Run History" subtitle="最小执行留痕，供前端与排障使用">
         <div className="table-list">
           {runs.map((run) => (
-            <article key={run.run_id} className="table-item">
+            <Link key={run.run_id} to={`/runs/${run.run_id}`} className="table-item table-link">
               <div className="table-item-main">
                 <div className="table-item-title">
                   <strong>{run.mount_id || run.run_id}</strong>
@@ -47,7 +61,7 @@ export function RunsPage() {
                   <p>{run.source || "-"}</p>
                 </div>
               </div>
-            </article>
+            </Link>
           ))}
         </div>
       </Panel>

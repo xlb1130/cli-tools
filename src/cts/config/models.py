@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -150,8 +150,10 @@ class PluginConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     enabled: bool = True
+    protocol: str = "inprocess"
     module: Optional[str] = None
     path: Optional[str] = None
+    executable: Optional[str] = None
     factory: Optional[str] = None
     config: Dict[str, Any] = Field(default_factory=dict)
 
@@ -167,6 +169,47 @@ class HookConfig(BaseModel):
     fail_mode: str = "warn"
     when: Dict[str, Any] = Field(default_factory=dict)
     config: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowRunWhenConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    type: str = "success"
+    expression: Optional[str] = None
+
+
+class WorkflowStepConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    mount_id: Optional[str] = None
+    operation_ref: Optional[str] = None
+    args: Dict[str, Any] = Field(default_factory=dict)
+    input_from: Optional[str] = None
+    run_when: Union[WorkflowRunWhenConfig, str] = Field(default_factory=WorkflowRunWhenConfig)
+    retry_on_failure: bool = False
+    timeout_seconds: Optional[float] = None
+    description: Optional[str] = None
+    operation: Optional[Dict[str, Any]] = None
+
+
+class WorkflowConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    name: Optional[str] = None
+    description: Optional[str] = None
+    steps: List[WorkflowStepConfig] = Field(default_factory=list)
+    mount_as: Optional[str] = None
+    command_path: List[str] = Field(default_factory=list)
+    stable_name: Optional[str] = None
+    input_schema: Dict[str, Any] = Field(default_factory=dict)
+    output_from: Optional[str] = None
+    parallel_groups: List[List[str]] = Field(default_factory=list)
+    fail_fast: bool = True
+    continue_on_error: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+    risk: str = "read"
 
 
 class CTSConfig(BaseModel):
@@ -186,6 +229,7 @@ class CTSConfig(BaseModel):
     sources: Dict[str, SourceConfig] = Field(default_factory=dict)
     mounts: List[MountConfig] = Field(default_factory=list)
     aliases: List[Dict[str, Any]] = Field(default_factory=list)
+    workflows: List[WorkflowConfig] = Field(default_factory=list)
     surfaces: Dict[str, SurfaceConfig] = Field(default_factory=dict)
     policies: Dict[str, Any] = Field(default_factory=dict)
     defaults: Dict[str, Any] = Field(default_factory=dict)

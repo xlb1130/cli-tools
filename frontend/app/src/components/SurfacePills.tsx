@@ -11,7 +11,8 @@ export function SurfacePills({ surfaces }: SurfacePillsProps) {
     <div className="pill-row">
       {items.map(([surface, enabled]) => (
         <span key={surface} className={enabled ? "pill pill-on" : "pill pill-off"}>
-          {surface}
+          <span className="pill-dot" aria-hidden="true" />
+          <span>{surface}</span>
         </span>
       ))}
     </div>

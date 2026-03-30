@@ -292,14 +292,20 @@ mounts:
 ## 10. 建议的命令
 
 - `cts sync`
-- `cts sync --check-drift`
 - `cts inspect drift`
-- `cts inspect schema <mount-id>`
-- `cts doctor mounts`
+- `cts reconcile drift`
+
+按当前代码状态，更贴近现状的检查入口是：
+
+- `cts inspect operation <source> <operation>`
+- `cts inspect mount <mount-id>`
+- `cts doctor`
 
 未来还可以加：
 
-- `cts reconcile drift`
+- `cts sync --check-drift`
+- `cts inspect schema <mount-id>`
+- `cts doctor mounts`
 - `cts sync --accept-additive`
 
 ## 11. 日志与审计要求

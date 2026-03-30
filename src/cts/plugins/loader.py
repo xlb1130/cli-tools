@@ -12,6 +12,8 @@ from typing import Any, Callable, Dict, Optional
 from cts.config.loader import LoadedConfig
 from cts.config.models import HookConfig, PluginConfig
 from cts.execution.errors import CTSStructuredError, ConfigError
+from cts.models import ExecutionPlan, HelpDescriptor, InvokeResult, OperationDescriptor
+from cts.plugins.external import HookRegistration, SubprocessPlugin
 from cts.plugins.contracts import get_hook_contract
 
 
@@ -39,10 +41,11 @@ class HookContext:
 class LoadedPlugin:
     name: str
     config: PluginConfig
-    module: ModuleType
+    module: ModuleType | None
     instance: Any
     providers: Dict[str, Any] = field(default_factory=dict)
     hook_handlers: Dict[str, Callable[[HookContext], Optional[MutableMapping[str, Any]]]] = field(default_factory=dict)
+    external_hooks: list[HookConfig] = field(default_factory=list)
 
 
 class PluginManager:
@@ -121,7 +124,7 @@ class PluginManager:
 
     def describe_hooks(self) -> list[Dict[str, Any]]:
         items: list[Dict[str, Any]] = []
-        for index, hook in enumerate(self.loaded_config.config.hooks):
+        for index, hook in enumerate(self._all_hooks()):
             plugin = self._plugins.get(hook.plugin)
             items.append(
                 {
@@ -382,10 +385,9 @@ class PluginManager:
         for name, plugin_config in self.loaded_config.config.plugins.items():
             if not plugin_config.enabled:
                 continue
-            module = self._load_module(name, plugin_config)
-            instance = _build_plugin_instance(name, plugin_config, module)
-            providers = _normalize_mapping(_call_optional(instance, "register_providers"), f"{name}.register_providers")
-            hook_handlers = _normalize_mapping(_call_optional(instance, "get_hook_handlers"), f"{name}.get_hook_handlers")
+            module, instance = self._load_plugin_instance(name, plugin_config)
+            providers = self._load_plugin_providers(name, instance)
+            hook_handlers = self._load_plugin_hook_handlers(name, instance)
             self._plugins[name] = LoadedPlugin(
                 name=name,
                 config=plugin_config,
@@ -393,7 +395,20 @@ class PluginManager:
                 instance=instance,
                 providers=providers,
                 hook_handlers=hook_handlers,
+                external_hooks=self._load_external_hook_bindings(name, instance),
             )
+
+    def _load_plugin_instance(self, name: str, plugin_config: PluginConfig) -> tuple[ModuleType | None, Any]:
+        if plugin_config.executable or plugin_config.protocol == "subprocess":
+            executable = plugin_config.executable or plugin_config.path
+            if not executable:
+                raise PluginLoadError(f"external plugin '{name}' must declare executable or path")
+            plugin = SubprocessPlugin(self._resolve_path(executable))
+            plugin.load()
+            return None, plugin
+
+        module = self._load_module(name, plugin_config)
+        return module, _build_plugin_instance(name, plugin_config, module)
 
     def _load_module(self, name: str, plugin_config: PluginConfig) -> ModuleType:
         if plugin_config.module:
@@ -422,7 +437,7 @@ class PluginManager:
         return (Path.cwd() / candidate).resolve()
 
     def _validate_hooks(self) -> None:
-        for hook in self.loaded_config.config.hooks:
+        for hook in self._all_hooks():
             if hook.plugin not in self._plugins:
                 raise PluginLoadError(f"hook references unknown plugin: {hook.plugin}")
             plugin = self._plugins[hook.plugin]
@@ -501,11 +516,51 @@ class PluginManager:
     def _iter_hooks_for_event(self, event: str) -> list[tuple[int, HookConfig]]:
         hooks = [
             (index, hook)
-            for index, hook in enumerate(self.loaded_config.config.hooks)
+            for index, hook in enumerate(self._all_hooks())
             if hook.enabled and hook.event == event
         ]
         hooks.sort(key=lambda item: (item[1].priority, item[0]))
         return hooks
+
+    def _all_hooks(self) -> list[HookConfig]:
+        hooks = list(self.loaded_config.config.hooks)
+        for plugin in self._plugins.values():
+            hooks.extend(plugin.external_hooks)
+        return hooks
+
+    def _load_plugin_providers(self, name: str, instance: Any) -> Dict[str, Any]:
+        if isinstance(instance, SubprocessPlugin):
+            providers: Dict[str, Any] = {}
+            for provider_type, registration in instance._providers.items():
+                providers[str(provider_type)] = ExternalProviderAdapter(instance, str(provider_type), registration)
+            return providers
+        return _normalize_mapping(_call_optional(instance, "register_providers"), f"{name}.register_providers")
+
+    def _load_plugin_hook_handlers(self, name: str, instance: Any) -> Dict[str, Callable[[HookContext], Optional[MutableMapping[str, Any]]]]:
+        if isinstance(instance, SubprocessPlugin):
+            handlers: Dict[str, Callable[[HookContext], Optional[MutableMapping[str, Any]]]] = {}
+            for hook in instance._hooks:
+                handlers[str(hook.handler)] = _build_external_hook_handler(instance, str(hook.handler))
+            return handlers
+        return _normalize_mapping(_call_optional(instance, "get_hook_handlers"), f"{name}.get_hook_handlers")
+
+    def _load_external_hook_bindings(self, name: str, instance: Any) -> list[HookConfig]:
+        if not isinstance(instance, SubprocessPlugin):
+            return []
+        bindings: list[HookConfig] = []
+        for hook in instance._hooks:
+            when = hook.when if isinstance(hook.when, Mapping) else {}
+            bindings.append(
+                HookConfig(
+                    event=hook.event,
+                    plugin=name,
+                    handler=hook.handler,
+                    priority=hook.priority,
+                    fail_mode=hook.fail_mode,
+                    when=dict(when),
+                )
+            )
+        return bindings
 
     def _matches_hook(self, hook: HookConfig, payload: MutableMapping[str, Any], app: Any) -> bool:
         return bool(self._explain_hook_match(hook, payload, app)["matched"])
@@ -588,6 +643,98 @@ def _normalize_mapping(raw: Any, label: str) -> Dict[str, Any]:
     if not isinstance(raw, Mapping):
         raise PluginLoadError(f"{label} must return a mapping")
     return {str(key): value for key, value in raw.items()}
+
+
+class ExternalProviderAdapter:
+    def __init__(self, plugin: SubprocessPlugin, provider_type: str, registration: Any) -> None:
+        self.plugin = plugin
+        self.provider_type = provider_type
+        self.registration = registration
+
+    def discover(self, source_name: str, source_config: Any, app: Any) -> list[OperationDescriptor]:
+        payload = self._call("discover", source_name=source_name, source_config=source_config)
+        return [OperationDescriptor.model_validate(item) for item in payload]
+
+    def get_operation(self, source_name: str, source_config: Any, operation_id: str, app: Any) -> Optional[OperationDescriptor]:
+        payload = self._call("get_operation", source_name=source_name, source_config=source_config, operation_id=operation_id)
+        return OperationDescriptor.model_validate(payload) if payload else None
+
+    def get_schema(self, source_name: str, source_config: Any, operation_id: str, app: Any) -> Optional[tuple]:
+        payload = self._call("get_schema", source_name=source_name, source_config=source_config, operation_id=operation_id)
+        if payload is None:
+            return None
+        schema = payload.get("schema") if isinstance(payload, Mapping) else None
+        provenance = payload.get("provenance") if isinstance(payload, Mapping) else None
+        return schema, provenance
+
+    def get_help(self, source_name: str, source_config: Any, operation_id: str, app: Any) -> Optional[HelpDescriptor]:
+        payload = self._call("get_help", source_name=source_name, source_config=source_config, operation_id=operation_id)
+        return HelpDescriptor.model_validate(payload) if payload else None
+
+    def refresh_auth(self, source_name: str, source_config: Any, app: Any) -> Optional[Dict]:
+        payload = self._call("refresh_auth", source_name=source_name, source_config=source_config)
+        return dict(payload) if isinstance(payload, Mapping) else payload
+
+    def plan(self, source_name: str, source_config: Any, request: Any, app: Any) -> ExecutionPlan:
+        payload = self._call("plan", source_name=source_name, source_config=source_config, request=request)
+        return ExecutionPlan.model_validate(payload)
+
+    def invoke(self, source_name: str, source_config: Any, request: Any, app: Any) -> InvokeResult:
+        payload = self._call("invoke", source_name=source_name, source_config=source_config, request=request)
+        return InvokeResult.model_validate(payload)
+
+    def healthcheck(self, source_name: str, source_config: Any, app: Any) -> Dict:
+        payload = self._call("healthcheck", source_name=source_name, source_config=source_config)
+        return dict(payload) if isinstance(payload, Mapping) else {"ok": False, "result": payload}
+
+    def _call(self, method: str, **payload: Any) -> Any:
+        result = self.plugin.invoke(
+            f"provider.{method}",
+            {
+                "provider_type": self.provider_type,
+                **{key: _serialize_external_value(value) for key, value in payload.items()},
+            },
+        )
+        if "error" in result:
+            raise PluginLoadError(f"external plugin provider call failed: {result['error']}")
+        return result.get("result")
+
+
+def _build_external_hook_handler(plugin: SubprocessPlugin, action: str) -> Callable[[HookContext], Optional[MutableMapping[str, Any]]]:
+    def handler(ctx: HookContext) -> Optional[MutableMapping[str, Any]]:
+        result = plugin.invoke(action, _serialize_external_hook_context(ctx))
+        if "error" in result:
+            raise PluginLoadError(f"external hook '{action}' failed: {result['error']}")
+        payload = result.get("result")
+        if payload is None:
+            return None
+        if not isinstance(payload, MutableMapping):
+            raise PluginLoadError(f"external hook '{action}' must return a mapping")
+        return payload
+
+    return handler
+
+
+def _serialize_external_hook_context(ctx: HookContext) -> Dict[str, Any]:
+    return {
+        "event": ctx.event,
+        "plugin_name": ctx.plugin_name,
+        "plugin_config": _serialize_external_value(ctx.plugin_config),
+        "hook_config": _serialize_external_value(ctx.hook_config),
+        "payload": _serialize_external_value(ctx.payload),
+    }
+
+
+def _serialize_external_value(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Mapping):
+        return {str(key): _serialize_external_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_serialize_external_value(item) for item in value]
+    return value
 
 
 def _hook_context_values(payload: Mapping[str, Any], app: Any, *, event: str | None = None) -> Dict[str, Any]:

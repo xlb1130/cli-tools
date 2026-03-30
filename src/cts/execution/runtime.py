@@ -357,14 +357,9 @@ def _build_request(mount: MountRecord, args: Dict[str, Any], runtime: Dict[str, 
 
 def _resolve_reliability_config(app: "CTSApp", mount: MountRecord):
     """Resolve reliability configuration for a mount execution."""
-    from cts.reliability import ReliabilityConfig, merge_reliability_config, GlobalReliabilityDefaults
-    
-    # Get global defaults from app config
-    global_defaults = None
-    if hasattr(app, "config") and app.config:
-        reliability_dict = app.config.reliability or {}
-        if reliability_dict.get("defaults"):
-            global_defaults = GlobalReliabilityDefaults(**reliability_dict["defaults"])
+    from cts.reliability import merge_reliability_config
+
+    global_defaults = app.config.get_reliability_defaults() if hasattr(app, "config") and app.config else None
     
     # Get source-level reliability config
     source_reliability = None
@@ -390,23 +385,21 @@ def _resolve_reliability_config(app: "CTSApp", mount: MountRecord):
 def _get_reliability_manager(app: "CTSApp"):
     """Get or create reliability manager for the app."""
     from pathlib import Path
-    from cts.reliability import ReliabilityManager, GlobalReliabilityDefaults
-    
-    # Cache manager on app instance
+    from cts.reliability import ReliabilityManager
+
     if not hasattr(app, "_reliability_manager"):
-        global_defaults = None
-        if hasattr(app, "config") and app.config:
-            reliability_dict = app.config.reliability or {}
-            if reliability_dict.get("defaults"):
-                global_defaults = GlobalReliabilityDefaults(**reliability_dict["defaults"])
-        
+        global_defaults = app.config.get_reliability_defaults() if hasattr(app, "config") and app.config else None
         cache_dir = None
-        if hasattr(app, "cache_dir") and app.cache_dir:
-            cache_dir = Path(app.cache_dir) / "reliability"
-        
+        if hasattr(app, "primary_config_dir"):
+            cache_dir = Path(app.primary_config_dir) / ".cts_state" / "reliability"
+
         app._reliability_manager = ReliabilityManager(
             global_defaults=global_defaults,
             cache_dir=cache_dir,
         )
-    
+
+        if hasattr(app, "config") and app.config:
+            for key, budget in app.config.get_rate_limit_budgets().items():
+                app._reliability_manager.rate_limit_manager.register_budget(key, budget)
+
     return app._reliability_manager

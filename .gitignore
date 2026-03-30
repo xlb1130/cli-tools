@@ -3,7 +3,10 @@ node_modules/
 .pytest_cache/
 __pycache__/
 *.pyc
+build/
 src/*.egg-info/
 src/cts.egg-info/
 frontend/app/dist/
 frontend/app/*.tsbuildinfo
+
+dist/

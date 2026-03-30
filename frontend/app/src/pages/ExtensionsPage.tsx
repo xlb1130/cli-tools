@@ -4,6 +4,7 @@ import { ErrorState } from "../components/ErrorState";
 import { JsonViewer } from "../components/JsonViewer";
 import { LoadingState } from "../components/LoadingState";
 import { Panel } from "../components/Panel";
+import { PageTitle } from "../components/PageTitle";
 import {
   useExtensionEvents,
   useExplainHookDispatch,
@@ -72,16 +73,7 @@ export function ExtensionsPage() {
     hooksQuery.isLoading ||
     contractsQuery.isLoading ||
     eventsQuery.isLoading;
-
-  if (loading) {
-    return <LoadingState label="加载扩展调试视图" />;
-  }
-
-  if (summaryQuery.isError) {
-    return <ErrorState title="Extensions 加载失败" error={summaryQuery.error} />;
-  }
-
-  const summary = summaryQuery.data!;
+  const summary = summaryQuery.data;
   const pluginPayload = pluginsQuery.data ?? { items: [], provider_conflicts: [] };
   const plugins = pluginPayload.items;
   const providers = providersQuery.data ?? [];
@@ -91,7 +83,6 @@ export function ExtensionsPage() {
   const activePlugin = plugins.find((item) => item.name === selectedPlugin) ?? plugins[0] ?? null;
   const visibleEvents = eventItems.length ? eventItems : eventsResponse.items;
   const eventNames = contracts.map((item) => item.event);
-
   const contractByEvent = useMemo(() => {
     const result = new Map<string, (typeof contracts)[number]>();
     for (const item of contracts) {
@@ -100,6 +91,16 @@ export function ExtensionsPage() {
     return result;
   }, [contracts]);
   const activeContract = contractByEvent.get(labEvent) ?? contracts[0] ?? null;
+
+  if (loading) {
+    return <LoadingState label="加载扩展调试视图" />;
+  }
+
+  if (summaryQuery.isError) {
+    return <ErrorState title="Extensions 加载失败" error={summaryQuery.error} />;
+  }
+
+  const readySummary = summary!;
 
   const applyEventFilters = () => {
     setBeforeTs(undefined);
@@ -233,26 +234,27 @@ export function ExtensionsPage() {
     <div className="page-stack">
       <section className="hero">
         <div>
-          <p className="eyebrow">Extensibility</p>
-          <h2>Plugin / Provider / Hook 调试控制台</h2>
-          <p className="hero-copy">
-            这里展示的是 northbound 调试视角：哪些扩展已加载、provider 归属到哪里、hook 如何绑定，以及最近一次调度做了什么。
-          </p>
+          <PageTitle
+            icon="extensions"
+            eyebrow="Extensibility"
+            title="Plugin / Provider / Hook 调试控制台"
+            description="这里展示的是 northbound 调试视角：哪些扩展已加载、provider 归属到哪里、hook 如何绑定，以及最近一次调度做了什么。"
+          />
         </div>
         <div className="hero-actions">
           <div className="stack compact-stack">
-            <span className="sidebar-chip">Plugins {summary.plugin_count}</span>
-            <span className="sidebar-chip">Providers {summary.provider_count}</span>
-            <span className="sidebar-chip">Hooks {summary.enabled_hook_count}</span>
+            <span className="sidebar-chip">Plugins {readySummary.plugin_count}</span>
+            <span className="sidebar-chip">Providers {readySummary.provider_count}</span>
+            <span className="sidebar-chip">Hooks {readySummary.enabled_hook_count}</span>
           </div>
         </div>
       </section>
 
       <section className="stats-grid">
-        <StatCard label="Plugin Providers" value={String(summary.plugin_provider_count)} />
-        <StatCard label="Core Providers" value={String(summary.core_provider_count)} />
-        <StatCard label="Provider Conflicts" value={String(summary.provider_conflict_count)} />
-        <StatCard label="Recent Events" value={String(summary.recent_event_count)} />
+        <StatCard label="Plugin Providers" value={String(readySummary.plugin_provider_count)} />
+        <StatCard label="Core Providers" value={String(readySummary.core_provider_count)} />
+        <StatCard label="Provider Conflicts" value={String(readySummary.provider_conflict_count)} />
+        <StatCard label="Recent Events" value={String(readySummary.recent_event_count)} />
       </section>
 
       <div className="content-grid two-col">
@@ -291,7 +293,7 @@ export function ExtensionsPage() {
 
         <Panel title="Hook Events" subtitle="配置中的 hook 绑定分布">
           <div className="table-like">
-            {summary.hooks_by_event.map((item) => (
+            {readySummary.hooks_by_event.map((item) => (
               <button
                 key={item.event}
                 type="button"

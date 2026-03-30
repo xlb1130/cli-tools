@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ErrorState } from "../components/ErrorState";
 import { LoadingState } from "../components/LoadingState";
 import { Panel } from "../components/Panel";
+import { PageTitle } from "../components/PageTitle";
 import { RiskBadge } from "../components/RiskBadge";
 import { SurfacePills } from "../components/SurfacePills";
 import { useAppSummary, useMounts, useReloadApp, useRuns, useSources, useSyncAll } from "../lib/api";
@@ -56,14 +57,25 @@ export function DashboardPage() {
     <div className="page-stack">
       <section className="hero">
         <div>
-          <p className="eyebrow">Overview</p>
-          <h2>统一能力平面的当前快照</h2>
-          <p className="hero-copy">
-            这里聚合的是运行时已经编译后的结果。对人类是命令目录，对 AI 是稳定的 machine entry 和 schema 视图。
-          </p>
+          <PageTitle
+            icon="dashboard"
+            eyebrow="Overview"
+            title="统一能力平面的当前快照"
+            description="这里聚合的是运行时已经编译后的结果。对人类是命令目录，对 AI 是稳定的 machine entry 和 schema 视图。"
+          />
           {actionMessage ? <div className="inline-note">{actionMessage}</div> : null}
         </div>
         <div className="hero-actions">
+          <div className="hero-summary-grid">
+            <article className="hero-summary-card">
+              <span>Profile</span>
+              <strong>{summary.profile || "default"}</strong>
+            </article>
+            <article className="hero-summary-card">
+              <span>Config Graph</span>
+              <strong>{summary.config_files.length} file(s)</strong>
+            </article>
+          </div>
           <SurfacePills surfaces={summary.surfaces} />
           <div className="explain-actions">
             <button type="button" className="primary-button" onClick={handleReload} disabled={reloadMutation.isPending}>
@@ -84,15 +96,17 @@ export function DashboardPage() {
       </section>
 
       <div className="content-grid two-col">
-        <Panel title="Loaded Config Files" subtitle="后端实际读取并编译的配置路径">
-          <ul className="plain-list">
+        <Panel title="Loaded Config Files" subtitle="后端实际读取并编译的配置路径" kicker="Runtime Graph">
+          <ul className="plain-list list-grid">
             {summary.config_files.map((file) => (
-              <li key={file}>{file}</li>
+              <li key={file} className="list-card">
+                {file}
+              </li>
             ))}
           </ul>
         </Panel>
 
-        <Panel title="Runtime Paths" subtitle="最小日志与 history 存储位置">
+        <Panel title="Runtime Paths" subtitle="最小日志与 history 存储位置" kicker="Diagnostics">
           <dl className="detail-list">
             <div>
               <dt>app.jsonl</dt>
@@ -114,7 +128,7 @@ export function DashboardPage() {
         <Panel title="Source Snapshot" subtitle="最新 source 健康与 discovery 视图">
           <div className="table-like">
             {sources.map((source) => (
-              <Link key={source.name} to={`/sources?focus=${source.name}`} className="row-card">
+              <Link key={source.name} to={`/sources/${source.name}`} className="row-card">
                 <div>
                   <strong>{source.name}</strong>
                   <p>
@@ -148,7 +162,7 @@ export function DashboardPage() {
         </Panel>
       </div>
 
-      <Panel title="High Signal Mounts" subtitle="默认优先关注非只读能力和关键稳定入口">
+      <Panel title="High Signal Mounts" subtitle="默认优先关注非只读能力和关键稳定入口" kicker="Focus">
         <div className="mount-grid">
           {mounts.slice(0, 6).map((mount) => (
             <Link key={mount.mount_id} to={`/mounts/${mount.mount_id}`} className="mount-card">

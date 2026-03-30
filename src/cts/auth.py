@@ -4,13 +4,27 @@ import base64
 import json
 import os
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from cts.execution.logging import emit_app_event, utc_now_iso
 
 
-AUTH_ACTIVE_STATES = {"active", "expiring"}
+class AuthState(str, Enum):
+    """Auth session states."""
+    UNCONFIGURED = "unconfigured"
+    CONFIGURED = "configured"
+    LOGIN_REQUIRED = "login_required"
+    ACTIVE = "active"
+    EXPIRING = "expiring"
+    REFRESHING = "refreshing"
+    EXPIRED = "expired"
+    FAILED = "failed"
+    REVOKED = "revoked"
+
+
+AUTH_ACTIVE_STATES = {AuthState.ACTIVE.value, AuthState.EXPIRING.value}
 AUTH_SECRET_FIELDS = {
     "access_token",
     "api_key",
@@ -261,6 +275,178 @@ class AuthManager:
         self._write_sessions(sessions)
         emit_app_event(self.app, event="auth_refresh_complete", data={"auth_profile": name, "source": None, "mode": "noop"})
         return self.get_profile_status(name)
+
+    def validate(self, name: str) -> Dict[str, Any]:
+        """Validate an auth profile's current state.
+        
+        Returns detailed validation result including:
+        - Whether auth is ready for use
+        - Current state and any issues
+        - Recommended actions
+        """
+        profile = self.app.config.auth_profiles.get(name)
+        if profile is None:
+            return {
+                "valid": False,
+                "auth_profile": name,
+                "state": AuthState.UNCONFIGURED.value,
+                "issues": [{"code": "profile_not_found", "message": f"Auth profile '{name}' not found"}],
+                "actions": [],
+            }
+        
+        status = self.get_profile_status(name)
+        state = status.get("state", "unknown")
+        issues = []
+        actions = []
+        
+        # Check configuration issues
+        if state == "unconfigured":
+            issues.append({"code": "not_configured", "message": "Auth profile is not properly configured"})
+            actions.append({"action": "configure", "message": "Configure the auth profile in config"})
+        
+        elif state == "login_required":
+            issues.append({"code": "login_required", "message": "Login is required"})
+            actions.append({"action": "login", "command": f"cts auth login {name}"})
+        
+        elif state == "expired":
+            issues.append({"code": "expired", "message": "Session has expired"})
+            profile_obj = self.app.config.auth_profiles.get(name, {})
+            if profile_obj.get("refresh", {}).get("enabled"):
+                actions.append({"action": "refresh", "command": f"cts auth refresh {name}"})
+            else:
+                actions.append({"action": "login", "command": f"cts auth login {name}"})
+        
+        elif state == "expiring":
+            profile_obj = self.app.config.auth_profiles.get(name, {})
+            if profile_obj.get("refresh", {}).get("enabled"):
+                actions.append({"action": "refresh_soon", "message": "Session expiring soon, consider refreshing"})
+            issues.append({"code": "expiring", "message": "Session will expire soon", "level": "warning"})
+        
+        elif state == "failed":
+            issues.append({"code": "failed", "message": status.get("reason", "Authentication failed")})
+            actions.append({"action": "retry", "command": f"cts auth login {name}"})
+        
+        elif state == "revoked":
+            issues.append({"code": "revoked", "message": "Session has been revoked"})
+            actions.append({"action": "login", "command": f"cts auth login {name}"})
+        
+        valid = state in AUTH_ACTIVE_STATES
+        
+        return {
+            "valid": valid,
+            "auth_profile": name,
+            "state": state,
+            "issues": issues,
+            "actions": actions,
+            "status": status.get("status"),
+        }
+
+    def validate_all(self) -> Dict[str, Any]:
+        """Validate all auth profiles."""
+        results = {}
+        for name in self.app.config.auth_profiles:
+            results[name] = self.validate(name)
+        
+        valid_count = sum(1 for r in results.values() if r.get("valid"))
+        total_count = len(results)
+        
+        return {
+            "ok": valid_count == total_count,
+            "valid_count": valid_count,
+            "total_count": total_count,
+            "profiles": results,
+        }
+
+    def auto_refresh_if_needed(self, name: str, force: bool = False) -> Dict[str, Any]:
+        """Auto-refresh auth if session is expiring or expired.
+        
+        Args:
+            name: Auth profile name
+            force: Force refresh even if not expiring
+            
+        Returns:
+            Result including whether refresh was attempted and current state
+        """
+        profile = self.app.config.auth_profiles.get(name)
+        if profile is None:
+            return {
+                "refreshed": False,
+                "reason": "profile_not_found",
+                "state": AuthState.UNCONFIGURED.value,
+            }
+        
+        # Check if refresh is enabled for this profile
+        refresh_config = profile.get("refresh", {})
+        if not refresh_config.get("enabled", False):
+            return {
+                "refreshed": False,
+                "reason": "refresh_not_enabled",
+                "state": self.get_profile_status(name).get("state"),
+            }
+        
+        status = self.get_profile_status(name)
+        state = status.get("state")
+        
+        # Determine if refresh is needed
+        needs_refresh = force or state in ("expiring", "expired")
+        
+        if not needs_refresh:
+            return {
+                "refreshed": False,
+                "reason": "not_needed",
+                "state": state,
+            }
+        
+        # Attempt refresh
+        try:
+            result = self.refresh(name)
+            return {
+                "refreshed": True,
+                "previous_state": state,
+                "current_state": result.get("state"),
+                "result": result,
+            }
+        except Exception as e:
+            return {
+                "refreshed": False,
+                "reason": "refresh_failed",
+                "error": str(e),
+                "state": state,
+            }
+
+    def get_credentials_or_refresh(self, name: str) -> Optional[Dict[str, Any]]:
+        """Get credentials, auto-refreshing if needed.
+        
+        This is the recommended method for getting credentials before
+        an operation that requires authentication.
+        """
+        profile = self.app.config.auth_profiles.get(name)
+        if profile is None:
+            return None
+        
+        # Check current state
+        status = self.get_profile_status(name)
+        state = status.get("state")
+        
+        # If already active, return credentials
+        if state in AUTH_ACTIVE_STATES:
+            return self.credentials_for_source(
+                next((s for s, c in self.app.config.sources.items() if c.auth_ref == name), ""),
+                self.app.config.sources.get(next((s for s, c in self.app.config.sources.items() if c.auth_ref == name), "")),
+            )
+        
+        # Try auto-refresh if enabled
+        refresh_config = profile.get("refresh", {})
+        if refresh_config.get("enabled") and state in ("expiring", "expired"):
+            refresh_result = self.auto_refresh_if_needed(name)
+            if refresh_result.get("refreshed"):
+                # Re-get credentials after refresh
+                return self.credentials_for_source(
+                    next((s for s, c in self.app.config.sources.items() if c.auth_ref == name), ""),
+                    self.app.config.sources.get(next((s for s, c in self.app.config.sources.items() if c.auth_ref == name), "")),
+                )
+        
+        return None
 
     def _load_sessions(self) -> Dict[str, Dict[str, Any]]:
         path = self.sessions_path

@@ -1,0 +1,39 @@
+version: 1
+
+plugins:
+  demo:
+    path: ./demo_plugin.py
+    config:
+      suffix: "!"
+
+hooks:
+  - event: explain.before
+    plugin: demo
+    handler: suffix_text
+  - event: invoke.before
+    plugin: demo
+    handler: suffix_text
+  - event: invoke.after
+    plugin: demo
+    handler: mark_result
+
+sources:
+  plugin_source:
+    type: plugin_echo
+    operations:
+      echo:
+        title: Plugin Echo
+        description: Echo from plugin provider.
+        input_schema:
+          type: object
+          properties:
+            text:
+              type: string
+          required: [text]
+
+mounts:
+  - id: plugin-echo
+    source: plugin_source
+    operation: echo
+    command:
+      path: [plugin, echo]

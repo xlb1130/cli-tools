@@ -4,6 +4,7 @@ import json
 import shlex
 import sys
 import uuid
+import webbrowser
 from dataclasses import dataclass, field
 from functools import update_wrapper
 from pathlib import Path
@@ -28,7 +29,7 @@ from cts.config.editor import (
 )
 from cts.config.lint import lint_loaded_config
 from cts.config.loader import load_config
-from cts.execution.errors import RegistryError, exit_code_for_exception
+from cts.execution.errors import ConfigError, RegistryError, exit_code_for_exception
 from cts.execution.help_compiler import build_click_params, extract_request_args
 from cts.execution.logging import (
     emit_app_event,
@@ -47,6 +48,7 @@ from cts.presentation import (
     build_auth_profile,
     build_mount_details,
     build_mount_help,
+    build_reliability_status,
     build_secret_detail,
     build_secret_inventory,
     build_source_check_result,
@@ -243,6 +245,63 @@ def config_lint(ctx: click.Context, compile_runtime: bool, output_format: str) -
     click.echo(render_payload(payload, output_format))
     if not payload["ok"]:
         ctx.exit(2)
+
+
+@config.command("migrate")
+@click.option("--dry-run", is_flag=True, help="Preview changes without applying them.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
+@click.pass_context
+def config_migrate(ctx: click.Context, dry_run: bool, output_format: str) -> None:
+    """Migrate configuration to the latest version.
+    
+    This command analyzes the current configuration and applies
+    any necessary migrations to bring it up to the latest version.
+    
+    Use --dry-run to preview what changes would be made.
+    """
+    from cts.config.migration import MigrationManager, get_latest_version
+    from cts.config.loader import load_config
+    
+    state = _get_state(ctx)
+    config_path = str(state.config_path) if state.config_path else None
+    
+    try:
+        loaded = load_config(config_path)
+        raw_config = loaded.raw if hasattr(loaded, 'raw') else loaded.config.model_dump()
+        
+        manager = MigrationManager(config_path=config_path)
+        plan = manager.analyze(raw_config)
+        
+        if plan.from_version == plan.to_version:
+            payload = {
+                "ok": True,
+                "message": f"Configuration is already at the latest version ({plan.to_version})",
+                "from_version": plan.from_version,
+                "to_version": plan.to_version,
+                "actions_needed": False,
+            }
+            click.echo(render_payload(payload, output_format))
+            return
+        
+        result = manager.apply(raw_config, plan=plan, dry_run=dry_run)
+        
+        payload = {
+            "ok": result.success,
+            "from_version": result.from_version,
+            "to_version": result.to_version,
+            "dry_run": dry_run,
+            "applied_actions": len(result.applied_actions),
+            "skipped_actions": len(result.skipped_actions),
+            "errors": result.errors,
+            "warnings": result.warnings,
+            "plan": plan.to_dict() if dry_run else None,
+        }
+        click.echo(render_payload(payload, output_format))
+        
+        if not result.success:
+            ctx.exit(1)
+    except Exception as exc:
+        _fail(ctx, exc, "config_migrate", output_format)
 
 
 @main.group()
@@ -471,6 +530,87 @@ def source_test(app: CTSApp, source_name: str, discover: bool, output_format: st
     click.echo(render_payload(payload, output_format))
     if not payload["ok"]:
         click.get_current_context().exit(6)
+
+
+@source.command("remove")
+@click.argument("source_name")
+@click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Remove from a specific config file.")
+@click.option("--force", is_flag=True, help="Force removal even if mounts depend on this source.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
+@click.pass_context
+def source_remove(
+    ctx: click.Context,
+    source_name: str,
+    target_file: Optional[Path],
+    force: bool,
+    output_format: str,
+) -> None:
+    """Remove a source from configuration.
+    
+    This will also remove any mounts that reference this source,
+    unless --force is not specified and dependent mounts exist.
+    """
+    state = _get_state(ctx)
+    try:
+        session = prepare_edit_session(state.config_path, target_file=target_file)
+        app = CTSApp(
+            session.loaded,
+            active_profile=state.profile,
+            explicit_config_path=str(state.config_path) if state.config_path else None,
+            requested_profile=state.profile,
+        )
+        
+        if source_name not in app.config.sources:
+            raise RegistryError(f"source not found: {source_name}", code="source_not_found")
+        
+        # Find dependent mounts
+        dependent_mounts = [
+            mount for mount in app.catalog.mounts
+            if mount.source_name == source_name
+        ]
+        
+        if dependent_mounts and not force:
+            raise RegistryError(
+                f"source '{source_name}' has {len(dependent_mounts)} dependent mount(s)",
+                code="source_has_dependents",
+                suggestions=[
+                    "使用 --force 强制删除（同时删除依赖的 mount）",
+                    f"先手动删除依赖的 mount: {', '.join(m.mount_id for m in dependent_mounts[:5])}"
+                ],
+            )
+        
+        def mutator(payload: Dict[str, Any]) -> None:
+            sources = payload.get("sources", {})
+            if source_name in sources:
+                del sources[source_name]
+            if not sources:
+                payload.pop("sources", None)
+            
+            # Also remove dependent mounts if --force
+            if dependent_mounts:
+                mounts = payload.get("mounts", [])
+                if isinstance(mounts, list):
+                    remaining = [
+                        m for m in mounts
+                        if not (isinstance(m, dict) and m.get("source") == source_name)
+                    ]
+                    if remaining:
+                        payload["mounts"] = remaining
+                    else:
+                        payload.pop("mounts", None)
+        
+        updated, _ = apply_update(session, mutator, compile_runtime=False)
+        
+        payload = {
+            "ok": True,
+            "action": "source_remove",
+            "source_name": source_name,
+            "file": str(session.target_path),
+            "removed_mounts": [m.mount_id for m in dependent_mounts] if dependent_mounts else [],
+        }
+        click.echo(render_payload(payload, output_format))
+    except Exception as exc:
+        _fail(ctx, exc, "source_remove", output_format)
 
 
 @source.command("import-help")
@@ -995,6 +1135,311 @@ def source_import_schema(
         _fail(click.get_current_context(), exc, "source_import_schema", output_format)
 
 
+@main.group("import")
+def import_group() -> None:
+    """Simplified import flows for common onboarding tasks."""
+
+
+@import_group.command("cli")
+@click.argument("source_name")
+@click.argument("command_argv", nargs=-1)
+@click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Write into a specific loaded config file.")
+@click.option("--operation-id", default=None, help="Operation id. Defaults to a name derived from the command.")
+@click.option("--from", "import_strategy", type=click.Choice(["help", "completion", "manpage", "schema"]), default="help", show_default=True)
+@click.option("--bin", "executable", default=None, help="Executable to store on the source. Defaults to the first command token.")
+@click.option("--title", default=None)
+@click.option("--risk", type=click.Choice(["read", "write", "destructive"]), default="read", show_default=True)
+@click.option("--output-mode", type=click.Choice(["text", "json"]), default="text", show_default=True)
+@click.option("--help-flag", default="--help", show_default=True)
+@click.option("--completion-command", default=None, help="Shell-escaped command that prints completion candidates.")
+@click.option("--completion-file", type=click.Path(path_type=Path, dir_okay=False, exists=True), default=None)
+@click.option("--completion-format", type=click.Choice(["lines", "fish", "json"]), default="lines", show_default=True)
+@click.option("--man-command", default=None, help="Shell-escaped command that prints a plain-text man page.")
+@click.option("--man-file", type=click.Path(path_type=Path, dir_okay=False, exists=True), default=None)
+@click.option("--schema-command", default=None, help="Shell-escaped command that prints a JSON schema payload.")
+@click.option("--schema-file", type=click.Path(path_type=Path, dir_okay=False, exists=True), default=None)
+@click.option("--schema-format", type=click.Choice(["auto", "operation", "bindings", "options"]), default="auto", show_default=True)
+@click.option("--apply", is_flag=True, help="Write the imported source operation and mount into config.")
+@click.option("--save-manifest", "save_manifest_path", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Optional manifest file to write instead of storing the operation inline.")
+@click.option("--mount/--no-mount", "create_mount", default=True, show_default=True, help="Also create a mount for the imported operation.")
+@click.option("--mount-id", default=None, help="Mount id override. Defaults to an auto-generated stable id.")
+@click.option("--path", "command_path_value", default=None, help="Full mount command path. Defaults to '<source> <operation>'.")
+@click.option("--under", "under_values", multiple=True, help="Command path prefix used together with the operation tokens.")
+@click.option("--prefix", default=None, help="Mount id prefix. Defaults to the source name.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
+@click.pass_context
+def import_cli_command(
+    ctx: click.Context,
+    source_name: str,
+    command_argv: tuple[str, ...],
+    target_file: Optional[Path],
+    operation_id: Optional[str],
+    import_strategy: str,
+    executable: Optional[str],
+    title: Optional[str],
+    risk: str,
+    output_mode: str,
+    help_flag: str,
+    completion_command: Optional[str],
+    completion_file: Optional[Path],
+    completion_format: str,
+    man_command: Optional[str],
+    man_file: Optional[Path],
+    schema_command: Optional[str],
+    schema_file: Optional[Path],
+    schema_format: str,
+    apply: bool,
+    save_manifest_path: Optional[Path],
+    create_mount: bool,
+    mount_id: Optional[str],
+    command_path_value: Optional[str],
+    under_values: tuple[str, ...],
+    prefix: Optional[str],
+    output_format: str,
+) -> None:
+    state = _get_state(ctx)
+    try:
+        session = prepare_edit_session(state.config_path, target_file=target_file)
+        app = CTSApp(
+            session.loaded,
+            active_profile=state.profile,
+            explicit_config_path=str(state.config_path) if state.config_path else None,
+            requested_profile=state.profile,
+        )
+        plan = _prepare_cli_import_plan(
+            app,
+            source_name=source_name,
+            command_argv=list(command_argv),
+            operation_id=operation_id,
+            import_strategy=import_strategy,
+            executable=executable,
+            title=title,
+            risk=risk,
+            output_mode=output_mode,
+            help_flag=help_flag,
+            completion_command=completion_command,
+            completion_file=completion_file,
+            completion_format=completion_format,
+            man_command=man_command,
+            man_file=man_file,
+            schema_command=schema_command,
+            schema_file=schema_file,
+            schema_format=schema_format,
+            create_mount=create_mount,
+            mount_id=mount_id,
+            command_path_value=command_path_value,
+            under_values=under_values,
+            prefix=prefix,
+            save_manifest_path=save_manifest_path,
+        )
+
+        if not apply:
+            payload = {
+                "ok": True,
+                "action": "import_cli_preview",
+                **plan,
+            }
+            click.echo(render_payload(payload, output_format))
+            return
+
+        baseline_conflicts = conflict_signatures(app.catalog.conflicts)
+
+        def mutator(payload: Dict[str, Any]) -> None:
+            _apply_cli_import_plan(payload, plan)
+
+        updated, compiled_app = apply_update(
+            session,
+            mutator,
+            compile_runtime=True,
+            profile=state.profile,
+            baseline_conflicts=baseline_conflicts,
+        )
+
+        if plan.get("manifest_write"):
+            manifest_write = dict(plan["manifest_write"])
+            merge_operation_into_manifest(
+                Path(manifest_write["resolved_path"]),
+                dict(manifest_write["operation"]),
+                executable=manifest_write.get("executable"),
+            )
+
+        compiled_mount = None
+        if compiled_app and plan.get("mount"):
+            compiled_mount = compiled_app.catalog.find_by_id(plan["mount"]["id"])
+
+        payload = {
+            "ok": True,
+            "action": "import_cli_apply",
+            "file": str(session.target_path),
+            "created_file": session.created,
+            "warnings": list(session.warnings),
+            **plan,
+            "source_config": _strip_internal_metadata(updated.get("sources", {}).get(source_name, {})),
+            "mount_config": _find_mount_payload(updated.get("mounts", []), plan["mount"]["id"]) if plan.get("mount") else None,
+            "compiled": build_mount_details(compiled_app, compiled_mount) if compiled_app and compiled_mount else None,
+        }
+        click.echo(render_payload(payload, output_format))
+    except Exception as exc:
+        _fail(ctx, exc, "import_cli", output_format)
+
+
+@import_group.command("wizard")
+@click.option("--apply", is_flag=True, help="Write the imported source operation and mount into config after the wizard.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
+@click.pass_context
+def import_wizard(ctx: click.Context, apply: bool, output_format: str) -> None:
+    """Interactive wizard for simplified imports."""
+    import_type = click.prompt("Import type", type=click.Choice(["cli"]), default="cli", show_choices=False)
+    if import_type != "cli":
+        raise click.ClickException(f"unsupported import type: {import_type}")
+
+    source_name = click.prompt("Source name")
+    command_text = click.prompt("Command argv", prompt_suffix=": ")
+    import_strategy = click.prompt(
+        "Import strategy",
+        type=click.Choice(["help", "completion", "manpage", "schema"]),
+        default="help",
+        show_choices=False,
+    )
+    operation_id = click.prompt("Operation id", default=_derive_operation_id_from_command(shlex.split(command_text)))
+    title = click.prompt("Title", default="", show_default=False)
+    risk = click.prompt(
+        "Risk level",
+        type=click.Choice(["read", "write", "destructive"]),
+        default="read",
+        show_choices=False,
+    )
+    output_mode = click.prompt(
+        "Output mode",
+        type=click.Choice(["text", "json"]),
+        default="text",
+        show_choices=False,
+    )
+    save_manifest_raw = click.prompt("Save manifest path (optional)", default="", show_default=False)
+
+    extra_args: List[str] = []
+    if import_strategy == "help":
+        help_flag = click.prompt("Help flag", default="--help")
+        extra_args.extend(["--help-flag", help_flag])
+    elif import_strategy == "completion":
+        completion_command = click.prompt("Completion command", default="", show_default=False)
+        completion_file = click.prompt("Completion file (optional)", default="", show_default=False)
+        if completion_command:
+            extra_args.extend(["--completion-command", completion_command])
+        if completion_file:
+            extra_args.extend(["--completion-file", completion_file])
+    elif import_strategy == "manpage":
+        man_command = click.prompt("Manpage command", default="", show_default=False)
+        man_file = click.prompt("Manpage file (optional)", default="", show_default=False)
+        if man_command:
+            extra_args.extend(["--man-command", man_command])
+        if man_file:
+            extra_args.extend(["--man-file", man_file])
+    elif import_strategy == "schema":
+        schema_command = click.prompt("Schema command", default="", show_default=False)
+        schema_file = click.prompt("Schema file (optional)", default="", show_default=False)
+        if schema_command:
+            extra_args.extend(["--schema-command", schema_command])
+        if schema_file:
+            extra_args.extend(["--schema-file", schema_file])
+
+    should_apply = apply or click.confirm("Apply changes now?", default=False)
+
+    state = _get_state(ctx)
+    session = prepare_edit_session(state.config_path)
+    app = CTSApp(
+        session.loaded,
+        active_profile=state.profile,
+        explicit_config_path=str(state.config_path) if state.config_path else None,
+        requested_profile=state.profile,
+    )
+    extra: Dict[str, Any] = {
+        "help_flag": "--help",
+        "completion_command": None,
+        "completion_file": None,
+        "completion_format": "lines",
+        "man_command": None,
+        "man_file": None,
+        "schema_command": None,
+        "schema_file": None,
+        "schema_format": "auto",
+    }
+    for index in range(0, len(extra_args), 2):
+        key = extra_args[index].lstrip("-").replace("-", "_")
+        value = extra_args[index + 1]
+        extra[key] = Path(value) if key.endswith("_file") else value
+
+    plan = _prepare_cli_import_plan(
+        app,
+        source_name=source_name,
+        command_argv=shlex.split(command_text),
+        operation_id=operation_id,
+        import_strategy=import_strategy,
+        executable=None,
+        title=title or None,
+        risk=risk,
+        output_mode=output_mode,
+        help_flag=str(extra["help_flag"]),
+        completion_command=extra["completion_command"],
+        completion_file=extra["completion_file"],
+        completion_format=str(extra["completion_format"]),
+        man_command=extra["man_command"],
+        man_file=extra["man_file"],
+        schema_command=extra["schema_command"],
+        schema_file=extra["schema_file"],
+        schema_format=str(extra["schema_format"]),
+        create_mount=True,
+        mount_id=None,
+        command_path_value=None,
+        under_values=(),
+        prefix=None,
+        save_manifest_path=Path(save_manifest_raw) if save_manifest_raw else None,
+    )
+
+    if not should_apply:
+        click.echo(render_payload({"ok": True, "action": "import_cli_preview", **plan}, output_format))
+        return
+
+    baseline_conflicts = conflict_signatures(app.catalog.conflicts)
+
+    def mutator(payload: Dict[str, Any]) -> None:
+        _apply_cli_import_plan(payload, plan)
+
+    updated, compiled_app = apply_update(
+        session,
+        mutator,
+        compile_runtime=True,
+        profile=state.profile,
+        baseline_conflicts=baseline_conflicts,
+    )
+    if plan.get("manifest_write"):
+        manifest_write = dict(plan["manifest_write"])
+        merge_operation_into_manifest(
+            Path(manifest_write["resolved_path"]),
+            dict(manifest_write["operation"]),
+            executable=manifest_write.get("executable"),
+        )
+    compiled_mount = None
+    if compiled_app and plan.get("mount"):
+        compiled_mount = compiled_app.catalog.find_by_id(plan["mount"]["id"])
+    click.echo(
+        render_payload(
+            {
+                "ok": True,
+                "action": "import_cli_apply",
+                "file": str(session.target_path),
+                "created_file": session.created,
+                "warnings": list(session.warnings),
+                **plan,
+                "source_config": _strip_internal_metadata(updated.get("sources", {}).get(source_name, {})),
+                "mount_config": _find_mount_payload(updated.get("mounts", []), plan["mount"]["id"]) if plan.get("mount") else None,
+                "compiled": build_mount_details(compiled_app, compiled_mount) if compiled_app and compiled_mount else None,
+            },
+            output_format,
+        )
+    )
+
+
 @main.group()
 def mount() -> None:
     """Mount registry operations."""
@@ -1171,6 +1616,247 @@ def mount_show(app: CTSApp, mount_id: str, output_format: str) -> None:
     click.echo(render_payload(build_mount_details(app, mount), output_format))
 
 
+@mount.command("remove")
+@click.argument("mount_id")
+@click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Remove from a specific config file.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
+@click.pass_context
+def mount_remove(
+    ctx: click.Context,
+    mount_id: str,
+    target_file: Optional[Path],
+    output_format: str,
+) -> None:
+    """Remove a mount from configuration.
+    
+    This removes the mount entry from the config file.
+    """
+    state = _get_state(ctx)
+    try:
+        session = prepare_edit_session(state.config_path, target_file=target_file)
+        app = CTSApp(
+            session.loaded,
+            active_profile=state.profile,
+            explicit_config_path=str(state.config_path) if state.config_path else None,
+            requested_profile=state.profile,
+        )
+        
+        mount = app.catalog.find_by_id(mount_id)
+        if not mount:
+            raise RegistryError(f"mount not found: {mount_id}", code="mount_not_found")
+        
+        def mutator(payload: Dict[str, Any]) -> None:
+            mounts = payload.get("mounts", [])
+            if not isinstance(mounts, list):
+                return
+            remaining = [
+                m for m in mounts
+                if not (isinstance(m, dict) and m.get("id") == mount_id)
+            ]
+            if len(remaining) == len(mounts):
+                # Mount not found in this file, try to remove from raw config
+                return
+            if remaining:
+                payload["mounts"] = remaining
+            else:
+                payload.pop("mounts", None)
+        
+        updated, _ = apply_update(session, mutator, compile_runtime=False)
+        
+        payload = {
+            "ok": True,
+            "action": "mount_remove",
+            "mount_id": mount_id,
+            "file": str(session.target_path),
+            "source": mount.source_name,
+            "operation_id": mount.operation.id,
+        }
+        click.echo(render_payload(payload, output_format))
+    except Exception as exc:
+        _fail(ctx, exc, "mount_remove", output_format)
+
+
+@mount.command("import")
+@click.argument("source_name")
+@click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Write to a specific config file.")
+@click.option("--prefix", default=None, help="Mount ID prefix (default: source name).")
+@click.option("--under", "under_path", multiple=True, help="Command path prefix for all imported mounts.")
+@click.option("--risk", type=click.Choice(["read", "write", "destructive"]), default=None, help="Override risk level for all operations.")
+@click.option("--filter", "operation_filter", multiple=True, help="Only import operations matching these IDs (supports wildcards).")
+@click.option("--exclude", "exclude_filter", multiple=True, help="Exclude operations matching these IDs (supports wildcards).")
+@click.option("--dry-run", is_flag=True, help="Preview what would be imported without making changes.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
+@click.pass_context
+def mount_import(
+    ctx: click.Context,
+    source_name: str,
+    target_file: Optional[Path],
+    prefix: Optional[str],
+    under_path: tuple[str, ...],
+    risk: Optional[str],
+    operation_filter: tuple[str, ...],
+    exclude_filter: tuple[str, ...],
+    dry_run: bool,
+    output_format: str,
+) -> None:
+    """Batch import operations from a source as mounts.
+    
+    This command discovers all operations from a source and creates
+    mount entries for each one. Useful for quickly onboarding new
+    APIs or CLI tools.
+    
+    Examples:
+        cts mount import my-api --dry-run
+        cts mount import my-api --prefix api --under api
+        cts mount import my-api --filter "get_*" --filter "list_*"
+    """
+    import fnmatch
+    
+    state = _get_state(ctx)
+    try:
+        session = prepare_edit_session(state.config_path, target_file=target_file)
+        app = CTSApp(
+            session.loaded,
+            active_profile=state.profile,
+            explicit_config_path=str(state.config_path) if state.config_path else None,
+            requested_profile=state.profile,
+        )
+        
+        if source_name not in app.config.sources:
+            raise RegistryError(f"source not found: {source_name}", code="source_not_found")
+        
+        # Get operations from source
+        operations = app.source_operations.get(source_name, {})
+        if not operations:
+            # Try to discover
+            sync_result = app.sync(source_name)
+            operations = app.source_operations.get(source_name, {})
+        
+        if not operations:
+            raise RegistryError(
+                f"no operations found for source '{source_name}'",
+                code="no_operations",
+                suggestions=["确保 source 配置正确并能正常 discovery。"],
+            )
+        
+        # Filter operations
+        filtered_ops = []
+        for op_id, op in operations.items():
+            # Check include filter
+            if operation_filter:
+                if not any(fnmatch.fnmatch(op_id, pattern) for pattern in operation_filter):
+                    continue
+            # Check exclude filter
+            if exclude_filter:
+                if any(fnmatch.fnmatch(op_id, pattern) for pattern in exclude_filter):
+                    continue
+            filtered_ops.append((op_id, op))
+        
+        if not filtered_ops:
+            raise RegistryError(
+                "no operations match the specified filters",
+                code="no_matching_operations",
+            )
+        
+        # Generate mount entries
+        mount_prefix = prefix or source_name.replace("_", "-").replace(".", "-")
+        under_tokens = list(under_path)
+        
+        new_mounts = []
+        skipped_existing = []
+        
+        for op_id, op in filtered_ops:
+            mount_id = f"{mount_prefix}-{op_id.replace('.', '-').replace('_', '-')}"
+            
+            # Check if mount already exists
+            if app.catalog.find_by_id(mount_id):
+                skipped_existing.append(mount_id)
+                continue
+            
+            command_path = tokenize_identifier(op_id)
+            
+            mount_entry = {
+                "id": mount_id,
+                "source": source_name,
+                "operation": op_id,
+            }
+            
+            if command_path:
+                mount_entry["command"] = {"path": command_path}
+            
+            if under_tokens:
+                if "command" not in mount_entry:
+                    mount_entry["command"] = {}
+                mount_entry["command"]["under"] = under_tokens
+            
+            if risk:
+                mount_entry["policy"] = {"risk": risk}
+            elif op.risk and op.risk != "read":
+                mount_entry["policy"] = {"risk": op.risk}
+            
+            # Add help from operation
+            help_entry = {}
+            if op.title:
+                help_entry["summary"] = op.title
+            if op.description:
+                help_entry["description"] = op.description
+            if help_entry:
+                mount_entry["help"] = help_entry
+            
+            new_mounts.append(mount_entry)
+        
+        if dry_run:
+            payload = {
+                "ok": True,
+                "action": "mount_import_dry_run",
+                "source": source_name,
+                "total_operations": len(operations),
+                "filtered_operations": len(filtered_ops),
+                "mounts_to_create": len(new_mounts),
+                "skipped_existing": len(skipped_existing),
+                "mounts": new_mounts[:50],  # Limit preview
+                "truncated": len(new_mounts) > 50,
+            }
+            click.echo(render_payload(payload, output_format))
+            return
+        
+        if not new_mounts:
+            raise RegistryError(
+                f"all {len(filtered_ops)} matching operations already have mounts",
+                code="all_mounts_exist",
+            )
+        
+        baseline_conflicts = conflict_signatures(app.catalog.conflicts)
+        
+        def mutator(payload: Dict[str, Any]) -> None:
+            mounts = ensure_list(payload, "mounts")
+            mounts.extend(new_mounts)
+        
+        updated, compiled_app = apply_update(
+            session,
+            mutator,
+            compile_runtime=True,
+            profile=state.profile,
+            baseline_conflicts=baseline_conflicts,
+        )
+        
+        payload = {
+            "ok": True,
+            "action": "mount_import",
+            "source": source_name,
+            "file": str(session.target_path),
+            "created_file": session.created,
+            "total_operations": len(operations),
+            "filtered_operations": len(filtered_ops),
+            "mounts_created": len(new_mounts),
+            "skipped_existing": skipped_existing,
+            "mount_ids": [m["id"] for m in new_mounts],
+        }
+        click.echo(render_payload(payload, output_format))
+    except Exception as exc:
+        _fail(ctx, exc, "mount_import", output_format)
+
+
 @main.group("alias")
 def alias_group() -> None:
     """Top-level alias operations."""
@@ -1308,6 +1994,136 @@ def catalog_export(app: CTSApp, output_format: str) -> None:
     click.echo(render_payload(app.export_catalog(), output_format))
 
 
+@main.command("docs")
+@click.argument("output_dir", type=click.Path(path_type=Path), default=Path("docs/generated"))
+@click.option("--title", default="CTS Documentation", help="Documentation title.")
+@click.option("--format", "doc_format", type=click.Choice(["markdown", "html", "json"]), default="markdown")
+@click.option("--no-sources", is_flag=True, help="Skip sources documentation.")
+@click.option("--no-mounts", is_flag=True, help="Skip mounts documentation.")
+@click.option("--no-catalog", is_flag=True, help="Skip catalog documentation.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json", hidden=True)
+@pass_app
+def docs_generate(
+    app: CTSApp,
+    output_dir: Path,
+    title: str,
+    doc_format: str,
+    no_sources: bool,
+    no_mounts: bool,
+    no_catalog: bool,
+    output_format: str,
+) -> None:
+    """Generate documentation from CTS configuration."""
+    from cts.docs import DocsGenerator, DocsConfig
+    
+    config = DocsConfig(
+        output_dir=output_dir,
+        format=doc_format,
+        title=title,
+        include_sources=not no_sources,
+        include_mounts=not no_mounts,
+        include_catalog=not no_catalog,
+    )
+    
+    generator = DocsGenerator(app, config)
+    generated = generator.generate()
+    
+    payload = {
+        "ok": True,
+        "action": "docs_generate",
+        "output_dir": str(output_dir),
+        "generated_files": {k: str(v) for k, v in generated.items()},
+    }
+    click.echo(render_payload(payload, output_format))
+
+
+@main.group()
+def workflow() -> None:
+    """Workflow management commands."""
+
+
+@workflow.command("list")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
+@pass_app
+def workflow_list(app: CTSApp, output_format: str) -> None:
+    """List all configured workflows."""
+    workflows = [
+        workflow.model_dump(mode="json") if hasattr(workflow, "model_dump") else workflow
+        for workflow in getattr(app.config, "workflows", [])
+    ]
+    payload = {
+        "workflows": workflows,
+        "count": len(workflows),
+    }
+    click.echo(render_payload(payload, output_format))
+
+
+@workflow.command("execute")
+@click.argument("workflow_id")
+@click.option("--input-json", default=None, help="JSON input for the workflow.")
+@click.option("--dry-run", is_flag=True, help="Preview execution without running.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
+@click.pass_context
+def workflow_execute(
+    ctx: click.Context,
+    workflow_id: str,
+    input_json: Optional[str],
+    dry_run: bool,
+    output_format: str,
+) -> None:
+    """Execute a workflow."""
+    state = _get_state(ctx)
+    app = state.get_app()
+    
+    workflows = [
+        workflow.model_dump(mode="json") if hasattr(workflow, "model_dump") else workflow
+        for workflow in getattr(app.config, "workflows", [])
+    ]
+    workflow_config = None
+    for wf in workflows:
+        if wf.get("id") == workflow_id:
+            workflow_config = wf
+            break
+    
+    if not workflow_config:
+        _fail(ctx, RegistryError(f"workflow not found: {workflow_id}", code="workflow_not_found"), "workflow_execute", output_format)
+        return
+    
+    from cts.workflow import WorkflowConfig, WorkflowExecutor
+    
+    workflow = WorkflowConfig.from_dict(workflow_config)
+    executor = WorkflowExecutor(app)
+    
+    args = {}
+    if input_json:
+        try:
+            args = json.loads(input_json)
+        except json.JSONDecodeError as e:
+            _fail(ctx, ConfigError(f"Invalid JSON input: {e}"), "workflow_execute", output_format)
+            return
+    
+    result = executor.execute(workflow, args, dry_run=dry_run)
+    
+    payload = {
+        "ok": result.success,
+        "workflow_id": workflow_id,
+        "run_id": result.run_id,
+        "trace_id": result.trace_id,
+        "steps": [
+            {
+                "step_id": step.step_id,
+                "success": step.success,
+                "skipped": step.skipped,
+                "error": step.error,
+            }
+            for step in result.steps
+        ],
+        "output": result.output,
+        "error": result.error,
+    }
+    click.echo(render_payload(payload, output_format))
+
+
 @main.group()
 def inspect() -> None:
     """Inspect compiled sources, mounts, and operations."""
@@ -1412,7 +2228,10 @@ def inspect_drift(app: CTSApp, source_name: Optional[str], output_format: str) -
     click.echo(render_payload(payload, output_format))
 
 
-@main.command()
+@main.command(
+    help="Invoke a mounted capability with validated input.",
+    short_help="Invoke a mounted capability with validated input.",
+)
 @click.argument("mount_id")
 @click.option("--input-json", default=None, help="Raw JSON object input.")
 @click.option(
@@ -1449,7 +2268,10 @@ def invoke(
     _run_mount_command(app, mount, kwargs, mode="invoke")
 
 
-@main.command()
+@main.command(
+    help="Explain how a mounted capability would execute without running it.",
+    short_help="Explain how a mounted capability would execute without running it.",
+)
 @click.argument("mount_id")
 @click.option("--input-json", default=None, help="Raw JSON object input.")
 @click.option(
@@ -1475,7 +2297,10 @@ def explain(app: CTSApp, mount_id: str, input_json: Optional[str], input_file: O
     _run_mount_command(app, mount, kwargs, mode="explain")
 
 
-@main.command()
+@main.command(
+    help="Run discovery sync for one source or the whole registry.",
+    short_help="Run discovery sync for one source or the whole registry.",
+)
 @click.argument("source_name", required=False)
 @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
 @pass_app
@@ -1665,6 +2490,32 @@ def auth_logout(app: CTSApp, name: str, output_format: str) -> None:
         _fail(click.get_current_context(), exc, "auth_logout", output_format)
 
 
+@auth.command("validate")
+@click.argument("name", required=False)
+@click.option("--all", "validate_all", is_flag=True, help="Validate all auth profiles.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
+@pass_app
+def auth_validate(app: CTSApp, name: Optional[str], validate_all: bool, output_format: str) -> None:
+    """Validate auth profile(s) and show any issues.
+    
+    This command checks whether auth profiles are properly configured
+    and ready for use. It identifies issues like expired sessions,
+    missing credentials, or configuration problems.
+    
+    Examples:
+        cts auth validate my-profile
+        cts auth validate --all
+    """
+    try:
+        if validate_all or not name:
+            payload = app.auth_manager.validate_all()
+        else:
+            payload = app.auth_manager.validate(name)
+        click.echo(render_payload(payload, output_format))
+    except Exception as exc:
+        _fail(click.get_current_context(), exc, "auth_validate", output_format)
+
+
 @main.group()
 def secret() -> None:
     """Secret inventory commands."""
@@ -1731,50 +2582,249 @@ def completion_script(shell_name: str) -> None:
     click.echo(shell_complete.source())
 
 
+@completion.command("install")
+@click.option("--shell", "shell_name", type=click.Choice(["bash", "zsh", "fish"]), required=False, help="Shell type (auto-detected if not specified).")
+@click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Write to a specific file instead of the default shell config.")
+@click.option("--append", is_flag=True, help="Append to config file instead of replacing existing cts completion.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
+def completion_install(
+    shell_name: Optional[str],
+    target_file: Optional[Path],
+    append: bool,
+    output_format: str,
+) -> None:
+    """Install shell completion for cts.
+    
+    This command installs shell completion scripts for bash, zsh, or fish.
+    If --shell is not specified, it attempts to auto-detect the shell.
+    
+    For bash, completion is added to ~/.bashrc or ~/.bash_profile.
+    For zsh, completion is added to ~/.zshrc.
+    For fish, completion is added to ~/.config/fish/completions/cts.fish.
+    
+    Examples:
+        cts completion install
+        cts completion install --shell bash
+        cts completion install --shell zsh --file ~/.zshrc
+    """
+    import os
+    import re
+    
+    # Auto-detect shell if not specified
+    if shell_name is None:
+        shell_env = os.environ.get("SHELL", "")
+        if "zsh" in shell_env:
+            shell_name = "zsh"
+        elif "fish" in shell_env:
+            shell_name = "fish"
+        elif "bash" in shell_env:
+            shell_name = "bash"
+        else:
+            raise click.ClickException(
+                "Could not auto-detect shell. Please specify --shell (bash, zsh, or fish)."
+            )
+    
+    completion_class = get_completion_class(shell_name)
+    if completion_class is None:
+        raise click.ClickException(f"unsupported shell: {shell_name}")
+    
+    prog_name = main.name or "cts"
+    complete_var = f"_{prog_name.replace('-', '_').upper()}_COMPLETE"
+    shell_complete = completion_class(main, {}, prog_name, complete_var)
+    completion_source = shell_complete.source()
+    
+    # Determine target file
+    home = Path.home()
+    if target_file is None:
+        if shell_name == "bash":
+            # Try .bashrc first, then .bash_profile
+            target_file = home / ".bashrc"
+            if not target_file.exists():
+                target_file = home / ".bash_profile"
+        elif shell_name == "zsh":
+            target_file = home / ".zshrc"
+        elif shell_name == "fish":
+            target_file = home / ".config" / "fish" / "completions" / f"{prog_name}.fish"
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    # For bash and zsh, we need to source the completion
+    if shell_name in ("bash", "zsh"):
+        # Create the completion script in a separate file
+        completion_dir = home / ".local" / "share" / "cts" / "completions"
+        completion_dir.mkdir(parents=True, exist_ok=True)
+        completion_script_file = completion_dir / f"{prog_name}.{shell_name}"
+        completion_script_file.write_text(completion_source)
+        
+        # Add source line to config
+        source_line = f'[ -f {completion_script_file} ] && source {completion_script_file}'
+        marker_start = f"# >>> cts completion >>>"
+        marker_end = f"# <<< cts completion <<<"
+        
+        if target_file.exists():
+            existing_content = target_file.read_text()
+        else:
+            existing_content = ""
+        
+        # Check if completion is already installed
+        if marker_start in existing_content:
+            if append:
+                payload = {
+                    "ok": True,
+                    "action": "completion_install",
+                    "shell": shell_name,
+                    "file": str(target_file),
+                    "message": "Completion already installed. Use --append to add another or manually edit.",
+                    "completion_script": str(completion_script_file),
+                }
+                click.echo(render_payload(payload, output_format))
+                return
+            # Replace existing completion block
+            pattern = f"{re.escape(marker_start)}.*?{re.escape(marker_end)}"
+            new_content = re.sub(pattern, f"{marker_start}\n{source_line}\n{marker_end}", existing_content, flags=re.DOTALL)
+        else:
+            # Add new completion block
+            completion_block = f"\n{marker_start}\n{source_line}\n{marker_end}\n"
+            new_content = existing_content + completion_block
+        
+        target_file.write_text(new_content)
+        
+        payload = {
+            "ok": True,
+            "action": "completion_install",
+            "shell": shell_name,
+            "file": str(target_file),
+            "completion_script": str(completion_script_file),
+            "message": f"Completion installed. Restart your shell or run: source {target_file}",
+        }
+    else:
+        # For fish, just write the completion file
+        target_file.write_text(completion_source)
+        payload = {
+            "ok": True,
+            "action": "completion_install",
+            "shell": shell_name,
+            "file": str(target_file),
+            "message": f"Completion installed. Restart your shell or run: source {target_file}",
+        }
+    
+    click.echo(render_payload(payload, output_format))
+
+
+@completion.command("bootstrap")
+@click.option("--shell", "shell_name", type=click.Choice(["bash", "zsh", "fish"]), required=False, help="Shell type (auto-detected if not specified).")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
+def completion_bootstrap(shell_name: Optional[str], output_format: str) -> None:
+    """Bootstrap shell completion for the current session.
+    
+    This command outputs the shell commands needed to enable completion
+    in the current session. Useful for testing or for adding to your
+    shell profile manually.
+    
+    Examples:
+        eval $(cts completion bootstrap)
+        eval $(cts completion bootstrap --shell zsh)
+    """
+    import os
+    
+    # Auto-detect shell if not specified
+    if shell_name is None:
+        shell_env = os.environ.get("SHELL", "")
+        if "zsh" in shell_env:
+            shell_name = "zsh"
+        elif "fish" in shell_env:
+            shell_name = "fish"
+        elif "bash" in shell_env:
+            shell_name = "bash"
+        else:
+            raise click.ClickException(
+                "Could not auto-detect shell. Please specify --shell (bash, zsh, or fish)."
+            )
+    
+    completion_class = get_completion_class(shell_name)
+    if completion_class is None:
+        raise click.ClickException(f"unsupported shell: {shell_name}")
+    
+    prog_name = main.name or "cts"
+    complete_var = f"_{prog_name.replace('-', '_').upper()}_COMPLETE"
+    shell_complete = completion_class(main, {}, prog_name, complete_var)
+    completion_source = shell_complete.source()
+    
+    if shell_name == "bash":
+        # For bash, we need to set up the completion
+        click.echo(f"complete -F _{prog_name}_completion {prog_name}")
+        click.echo(f"_{prog_name}_completion() {{")
+        click.echo(f"  local IFS=$'\\n'")
+        click.echo(f"  COMPREPLY=($(env COMP_WORDS=\"${{COMP_WORDS[*]}}\" COMP_CWORD=$COMP_CWORD {complete_var}=complete-{shell_name} {prog_name}))")
+        click.echo("}")
+    elif shell_name == "zsh":
+        # For zsh, output the compdef
+        click.echo(completion_source)
+    elif shell_name == "fish":
+        # For fish, just output the source
+        click.echo(completion_source)
+
+
 @main.group()
 def serve() -> None:
     """Northbound surface commands."""
 
 
-@serve.command("http")
-@click.option("--host", default="127.0.0.1", show_default=True)
-@click.option("--port", type=int, default=8787, show_default=True)
-@click.option("--ui", "serve_ui", is_flag=True, help="Also serve the built frontend UI if available.")
-@click.option("--ui-dir", type=click.Path(path_type=Path, file_okay=False), default=None, help="Explicit frontend dist directory.")
-@pass_app
-def serve_http_command(app: CTSApp, host: str, port: int, serve_ui: bool, ui_dir: Optional[Path]) -> None:
-    resolved_ui_dir: Optional[Path] = None
+def _resolve_http_ui_dir(ctx: click.Context, serve_ui: bool, ui_dir: Optional[Path]) -> Optional[Path]:
     if ui_dir is not None:
-        resolved_ui_dir = ui_dir.resolve()
-    elif serve_ui:
-        candidate = default_ui_dist_dir()
-        if not candidate.exists():
-            _fail(
-                click.get_current_context(),
-                RegistryError(
-                    f"ui dist directory not found: {candidate}",
-                    code="ui_dist_not_found",
-                    suggestions=["先在 frontend/app 下执行 `npm run build`，或显式传入 `--ui-dir`。"],
-                ),
-                "serve_http",
-                "json",
-            )
-            return
-        resolved_ui_dir = candidate.resolve()
+        return ui_dir.resolve()
+    if not serve_ui:
+        return None
+
+    candidate = default_ui_dist_dir()
+    if not candidate.exists():
+        _fail(
+            ctx,
+            RegistryError(
+                f"ui dist directory not found: {candidate}",
+                code="ui_dist_not_found",
+                suggestions=["先在 frontend/app 下执行 `npm run build`，或显式传入 `--ui-dir`。"],
+            ),
+            "serve_http",
+            "json",
+        )
+        return None
+    return candidate.resolve()
+
+
+def _serve_http_surface(
+    app: CTSApp,
+    host: str,
+    port: int,
+    serve_ui: bool,
+    ui_dir: Optional[Path],
+    open_browser: bool,
+) -> None:
+    ctx = click.get_current_context()
+    resolved_ui_dir = _resolve_http_ui_dir(ctx, serve_ui=serve_ui, ui_dir=ui_dir)
+    if serve_ui and resolved_ui_dir is None:
+        return
 
     server = create_http_server(app, host=host, port=port, ui_dir=resolved_ui_dir)
     actual_host, actual_port = server.server_address
+    base_url = f"http://{actual_host}:{actual_port}"
+    browser_url = base_url if resolved_ui_dir is not None else f"{base_url}/api/app/summary"
     click.echo(
         json.dumps(
             {
                 "ok": True,
                 "surface": "http",
-                "base_url": f"http://{actual_host}:{actual_port}",
+                "base_url": base_url,
+                "browser_url": browser_url,
                 "ui_enabled": resolved_ui_dir is not None,
                 "ui_dir": str(resolved_ui_dir) if resolved_ui_dir else None,
             }
         )
     )
+    if open_browser:
+        try:
+            webbrowser.open(browser_url)
+        except Exception:
+            pass
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -1783,10 +2833,92 @@ def serve_http_command(app: CTSApp, host: str, port: int, serve_ui: bool, ui_dir
         server.server_close()
 
 
-@main.command()
-@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
+@serve.command("http")
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", type=int, default=8787, show_default=True)
+@click.option("--ui", "serve_ui", is_flag=True, help="Also serve the built frontend UI if available.")
+@click.option("--ui-dir", type=click.Path(path_type=Path, file_okay=False), default=None, help="Explicit frontend dist directory.")
+@click.option("--open", "open_browser", is_flag=True, help="Open the server URL in the default browser after startup.")
 @pass_app
-def doctor(app: CTSApp, output_format: str) -> None:
+def serve_http_command(app: CTSApp, host: str, port: int, serve_ui: bool, ui_dir: Optional[Path], open_browser: bool) -> None:
+    _serve_http_surface(
+        app,
+        host=host,
+        port=port,
+        serve_ui=serve_ui,
+        ui_dir=ui_dir,
+        open_browser=open_browser,
+    )
+
+
+@main.command("ui")
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", type=int, default=8787, show_default=True)
+@click.option("--ui-dir", type=click.Path(path_type=Path, file_okay=False), default=None, help="Explicit frontend dist directory.")
+@click.option("--open", "open_browser", is_flag=True, help="Open the UI in the default browser after startup.")
+@pass_app
+def ui_command(app: CTSApp, host: str, port: int, ui_dir: Optional[Path], open_browser: bool) -> None:
+    """Start the HTTP API together with the bundled frontend UI."""
+    _serve_http_surface(
+        app,
+        host=host,
+        port=port,
+        serve_ui=True,
+        ui_dir=ui_dir,
+        open_browser=open_browser,
+    )
+
+
+@serve.command("jsonrpc")
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", type=int, default=8788, show_default=True)
+@pass_app
+def serve_jsonrpc_command(app: CTSApp, host: str, port: int) -> None:
+    """Start JSON-RPC 2.0 server for CTS API."""
+    from cts.surfaces.jsonrpc import serve_jsonrpc
+    
+    click.echo(
+        json.dumps(
+            {
+                "ok": True,
+                "surface": "jsonrpc",
+                "base_url": f"http://{host}:{port}",
+            }
+        )
+    )
+    serve_jsonrpc(app, host=host, port=port)
+
+
+@serve.command("mcp")
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", type=int, default=8789, show_default=True)
+@pass_app
+def serve_mcp_command(app: CTSApp, host: str, port: int) -> None:
+    """Start MCP (Model Context Protocol) server exposing CTS mounts as tools."""
+    from cts.surfaces.mcp import serve_mcp
+    
+    click.echo(
+        json.dumps(
+            {
+                "ok": True,
+                "surface": "mcp",
+                "base_url": f"http://{host}:{port}",
+                "tools_count": len([m for m in app.catalog.mounts if "mcp" in getattr(m, "supported_surfaces", ["invoke"])]),
+            }
+        )
+    )
+    serve_mcp(app, host=host, port=port)
+
+
+@main.command(
+    help="Run health, config, and runtime diagnostics.",
+    short_help="Run health, config, and runtime diagnostics.",
+)
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
+@click.option("--compatibility", is_flag=True, help="Also run compatibility checks.")
+@click.option("--auth", "check_auth", is_flag=True, help="Also validate auth profiles.")
+@pass_app
+def doctor(app: CTSApp, output_format: str, compatibility: bool, check_auth: bool) -> None:
     checks = [build_source_check_result(app, source_name, source) for source_name, source in app.config.sources.items()]
     summary = build_app_summary(app)
     payload = {
@@ -1796,7 +2928,16 @@ def doctor(app: CTSApp, output_format: str) -> None:
         "discovery_errors": app.discovery_errors,
         "checks": checks,
         "runtime_paths": summary["runtime_paths"],
+        "reliability": build_reliability_status(app),
     }
+    
+    if compatibility:
+        from cts.config.compatibility import doctor_compatibility
+        payload["compatibility"] = doctor_compatibility(app)
+    
+    if check_auth:
+        payload["auth"] = app.auth_manager.validate_all()
+    
     click.echo(render_payload(payload, output_format))
 
 
@@ -1997,6 +3138,352 @@ def _parse_root_argv(argv: list[str]) -> Dict[str, Any]:
             continue
         index += 1
     return parsed
+
+
+def _prepare_cli_import_plan(
+    app: CTSApp,
+    *,
+    source_name: str,
+    command_argv: List[str],
+    operation_id: Optional[str],
+    import_strategy: str,
+    executable: Optional[str],
+    title: Optional[str],
+    risk: str,
+    output_mode: str,
+    help_flag: str,
+    completion_command: Optional[str],
+    completion_file: Optional[Path],
+    completion_format: str,
+    man_command: Optional[str],
+    man_file: Optional[Path],
+    schema_command: Optional[str],
+    schema_file: Optional[Path],
+    schema_format: str,
+    create_mount: bool,
+    mount_id: Optional[str],
+    command_path_value: Optional[str],
+    under_values: tuple[str, ...],
+    prefix: Optional[str],
+    save_manifest_path: Optional[Path],
+) -> Dict[str, Any]:
+    existing_source = app.config.sources.get(source_name)
+    if existing_source and existing_source.type not in {"cli", "shell"}:
+        raise RegistryError(
+            f"source '{source_name}' is not a cli/shell source",
+            code="source_type_not_supported",
+            suggestions=["改用新的 source 名称，或继续使用原来的 provider 专用导入命令。"],
+        )
+
+    final_command = list(command_argv)
+    source_executable = executable or (existing_source.executable if existing_source else None)
+    if not final_command:
+        if source_executable:
+            final_command = [source_executable]
+        else:
+            raise RegistryError(
+                "command argv required",
+                code="command_argv_required",
+                suggestions=["传入要导入的命令，例如 `cts import cli gh gh issue list --from help`。"],
+            )
+    if source_executable is None and final_command:
+        source_executable = final_command[0]
+
+    final_operation_id = operation_id or _derive_operation_id_from_command(final_command)
+    import_result = _run_cli_import_strategy(
+        operation_id=final_operation_id,
+        command_argv=final_command,
+        import_strategy=import_strategy,
+        title=title,
+        risk=risk,
+        output_mode=output_mode,
+        help_flag=help_flag,
+        completion_command=completion_command,
+        completion_file=completion_file,
+        completion_format=completion_format,
+        man_command=man_command,
+        man_file=man_file,
+        schema_command=schema_command,
+        schema_file=schema_file,
+        schema_format=schema_format,
+    )
+
+    imported_operation = dict(import_result.operation)
+    source_operation = _build_inline_source_operation(imported_operation)
+    manifest_write = None
+    if save_manifest_path is not None:
+        manifest_write = {
+            "path": str(save_manifest_path),
+            "resolved_path": str(app.resolve_path(str(save_manifest_path), owner=existing_source)),
+            "operation": imported_operation,
+            "executable": source_executable,
+        }
+
+    mount_plan = None
+    warnings: List[str] = []
+    if create_mount:
+        mount_plan, mount_warning = _build_cli_import_mount_plan(
+            app,
+            source_name=source_name,
+            operation_id=final_operation_id,
+            imported_operation=imported_operation,
+            mount_id=mount_id,
+            command_path_value=command_path_value,
+            under_values=under_values,
+            prefix=prefix,
+        )
+        if mount_warning:
+            warnings.append(mount_warning)
+
+    source_preview = {
+        "name": source_name,
+        "existing": existing_source is not None,
+        "type": existing_source.type if existing_source else "cli",
+        "executable": source_executable,
+        "stores_operation_inline": manifest_write is None,
+        "manifest_path": manifest_write["path"] if manifest_write else (existing_source.discovery.manifest if existing_source else None),
+        "operation_id": final_operation_id,
+        "operation": source_operation,
+    }
+
+    return {
+        "source": source_preview,
+        "operation_id": final_operation_id,
+        "command_argv": final_command,
+        "strategy": import_strategy,
+        "imported_operation": imported_operation,
+        "mount": mount_plan,
+        "manifest_write": manifest_write,
+        "warnings": warnings,
+    }
+
+
+def _run_cli_import_strategy(
+    *,
+    operation_id: str,
+    command_argv: List[str],
+    import_strategy: str,
+    title: Optional[str],
+    risk: str,
+    output_mode: str,
+    help_flag: str,
+    completion_command: Optional[str],
+    completion_file: Optional[Path],
+    completion_format: str,
+    man_command: Optional[str],
+    man_file: Optional[Path],
+    schema_command: Optional[str],
+    schema_file: Optional[Path],
+    schema_format: str,
+):
+    if import_strategy == "help":
+        return import_cli_help(
+            operation_id=operation_id,
+            command_argv=command_argv,
+            help_flag=help_flag,
+            risk=risk,
+            output_mode=output_mode,
+            title=title,
+        )
+    if import_strategy == "completion":
+        if not completion_command and completion_file is None:
+            raise RegistryError(
+                "completion source required",
+                code="completion_source_required",
+                suggestions=["传入 --completion-command 或 --completion-file。"],
+            )
+        return import_cli_completion(
+            operation_id=operation_id,
+            command_argv=command_argv,
+            completion_command=shlex.split(completion_command) if completion_command else None,
+            completion_file=completion_file,
+            completion_format=completion_format,
+            risk=risk,
+            output_mode=output_mode,
+            title=title,
+        )
+    if import_strategy == "manpage":
+        if not man_command and man_file is None:
+            raise RegistryError(
+                "man page source required",
+                code="manpage_source_required",
+                suggestions=["传入 --man-command 或 --man-file。"],
+            )
+        return import_cli_manpage(
+            operation_id=operation_id,
+            command_argv=command_argv,
+            man_command=shlex.split(man_command) if man_command else None,
+            man_file=man_file,
+            risk=risk,
+            output_mode=output_mode,
+            title=title,
+        )
+    if import_strategy == "schema":
+        if not schema_command and schema_file is None:
+            raise RegistryError(
+                "schema source required",
+                code="schema_source_required",
+                suggestions=["传入 --schema-command 或 --schema-file。"],
+            )
+        return import_cli_schema(
+            operation_id=operation_id,
+            command_argv=command_argv,
+            schema_command=shlex.split(schema_command) if schema_command else None,
+            schema_file=schema_file,
+            schema_format=schema_format,
+            risk=risk,
+            output_mode=output_mode,
+            title=title,
+        )
+    raise RegistryError(f"unsupported import strategy: {import_strategy}", code="import_strategy_unsupported")
+
+
+def _build_inline_source_operation(imported_operation: Dict[str, Any]) -> Dict[str, Any]:
+    provider_config: Dict[str, Any] = {}
+    for key in (
+        "command_argv",
+        "option_bindings",
+        "option_order",
+        "output",
+        "output_mode",
+        "imported_from",
+        "schema_payload",
+        "help_command",
+        "completion_command",
+        "man_command",
+    ):
+        if key in imported_operation:
+            provider_config[key] = imported_operation[key]
+
+    return {
+        "title": imported_operation.get("title"),
+        "description": imported_operation.get("description"),
+        "kind": imported_operation.get("kind", "action"),
+        "risk": imported_operation.get("risk", "read"),
+        "input_schema": imported_operation.get("input_schema") or {},
+        "output_schema": imported_operation.get("output_schema"),
+        "examples": imported_operation.get("examples") or [],
+        "supported_surfaces": imported_operation.get("supported_surfaces") or ["cli", "invoke"],
+        "provider_config": provider_config,
+    }
+
+
+def _build_cli_import_mount_plan(
+    app: CTSApp,
+    *,
+    source_name: str,
+    operation_id: str,
+    imported_operation: Dict[str, Any],
+    mount_id: Optional[str],
+    command_path_value: Optional[str],
+    under_values: tuple[str, ...],
+    prefix: Optional[str],
+) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
+    existing_mount = app.catalog.find_by_source_and_operation(source_name, operation_id)
+    if existing_mount is not None:
+        return (
+            {
+                "id": existing_mount.mount_id,
+                "existing": True,
+                "command_path": list(existing_mount.command_path),
+                "source": source_name,
+                "operation": operation_id,
+            },
+            f"mount already exists for {source_name}.{operation_id}; reusing {existing_mount.mount_id}",
+        )
+
+    mount_prefix = prefix or source_name.replace("_", "-").replace(".", "-")
+    base_mount_id = mount_id or f"{mount_prefix}-{operation_id.replace('.', '-').replace('_', '-')}"
+
+    if command_path_value:
+        base_command_path = _split_command_segments([command_path_value])
+    else:
+        under_tokens = _split_command_segments(list(under_values))
+        operation_tokens = tokenize_identifier(operation_id)
+        if under_tokens:
+            base_command_path = under_tokens + operation_tokens
+        else:
+            base_command_path = tokenize_identifier(source_name) + operation_tokens
+
+    final_mount_id, final_command_path, warning = _make_mount_identity_unique(app, base_mount_id, base_command_path)
+    mount_entry: Dict[str, Any] = {
+        "id": final_mount_id,
+        "source": source_name,
+        "operation": operation_id,
+        "command": {"path": final_command_path},
+    }
+
+    help_entry: Dict[str, Any] = {}
+    if imported_operation.get("title"):
+        help_entry["summary"] = imported_operation["title"]
+    if imported_operation.get("description"):
+        help_entry["description"] = imported_operation["description"]
+    if help_entry:
+        mount_entry["help"] = help_entry
+
+    risk = imported_operation.get("risk")
+    if risk and risk != "read":
+        mount_entry["policy"] = {"risk": risk}
+
+    return mount_entry, warning
+
+
+def _make_mount_identity_unique(app: CTSApp, mount_id: str, command_path: List[str]) -> tuple[str, List[str], Optional[str]]:
+    candidate_mount_id = mount_id
+    candidate_path = list(command_path)
+    suffix = 2
+    warning = None
+
+    while app.catalog.find_by_id(candidate_mount_id) is not None or app.catalog.find_by_path(candidate_path) is not None:
+        warning = "mount id or command path already exists; generated a numeric suffix automatically"
+        candidate_mount_id = f"{mount_id}-{suffix}"
+        candidate_path = list(command_path)
+        if candidate_path:
+            candidate_path[-1] = f"{candidate_path[-1]}-{suffix}"
+        suffix += 1
+    return candidate_mount_id, candidate_path, warning
+
+
+def _derive_operation_id_from_command(command_argv: List[str]) -> str:
+    candidates = [token for token in command_argv if token and not token.startswith("-")]
+    if not candidates:
+        return "command"
+    return candidates[-1].replace("-", "_").replace(".", "_")
+
+
+def _apply_cli_import_plan(payload: Dict[str, Any], plan: Dict[str, Any]) -> None:
+    source_plan = dict(plan["source"])
+    source_name = str(source_plan["name"])
+    operation_id = str(source_plan["operation_id"])
+    sources = ensure_mapping(payload, "sources")
+    source_payload = sources.get(source_name)
+    if source_payload is None:
+        source_payload = {"type": source_plan["type"], "enabled": True}
+        sources[source_name] = source_payload
+    if not isinstance(source_payload, dict):
+        raise ConfigEditError(f"source payload must be a mapping: {source_name}")
+
+    source_payload.setdefault("type", source_plan["type"])
+    if source_plan.get("executable"):
+        source_payload["executable"] = source_plan["executable"]
+
+    manifest_write = plan.get("manifest_write")
+    if manifest_write:
+        discovery = ensure_mapping(source_payload, "discovery")
+        discovery["manifest"] = manifest_write["path"]
+        operations = source_payload.get("operations")
+        if isinstance(operations, dict) and operation_id in operations:
+            del operations[operation_id]
+            if not operations:
+                source_payload.pop("operations", None)
+    else:
+        operations = ensure_mapping(source_payload, "operations")
+        operations[operation_id] = dict(source_plan["operation"])
+
+    mount_plan = plan.get("mount")
+    if mount_plan and not mount_plan.get("existing"):
+        mounts = ensure_list(payload, "mounts")
+        mounts.append(dict(mount_plan))
 
 
 def _parse_assignment(raw: str) -> tuple[str, Any]:

@@ -1,0 +1,32 @@
+version: 1
+
+sources:
+  shell_tasks:
+    type: shell
+    executable: /bin/sh
+    operations:
+      say_hello:
+        title: Say Hello
+        description: A tiny shell-backed operation.
+        input_schema:
+          type: object
+          required: [name]
+          properties:
+            name:
+              type: string
+        provider_config:
+          argv_template:
+            - /bin/sh
+            - -c
+            - 'printf "hello %s\n" "$1"'
+            - shell-task
+            - "{name}"
+          output:
+            mode: text
+
+mounts:
+  - id: shell-hello
+    source: shell_tasks
+    operation: say_hello
+    command:
+      path: [shell, hello]

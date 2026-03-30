@@ -250,10 +250,11 @@ Provider 建议支持这些能力：
 
 - `cts auth list`
 - `cts auth status [name]`
+- `cts auth validate [name]`
 - `cts auth login <name>`
 - `cts auth refresh <name>`
 - `cts auth logout <name>`
-- `cts doctor auth`
+- `cts doctor --auth`
 
 这些命令还能为前端提供相同 backend 能力。
 

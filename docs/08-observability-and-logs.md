@@ -191,16 +191,17 @@ class LogEvent(BaseModel):
 
 ## 11. 建议的前端接口
 
-后续可以补：
+当前已经有的 northbound 查询入口：
 
 ```http
-GET /api/logs/runs
-GET /api/logs/runs/{run_id}
+GET /api/runs
+GET /api/runs/{run_id}
 GET /api/logs/config
-GET /api/logs/sync
+GET /api/logs/discovery
+GET /api/logs/app
 ```
 
-第一版只要后端日志格式定好，接口可以后置。
+后续仍可再补更细的日志子资源和统一分页/过滤合同，但“前端完全不能查日志”这一点已经不成立。
 
 ## 12. 最终结论
 

@@ -1,0 +1,43 @@
+version: 1
+
+sources:
+  demo_cli:
+    type: cli
+    executable: python3
+    operations:
+      echo_json:
+        title: Echo JSON
+        description: Return structured JSON from an inline operation definition.
+        kind: action
+        risk: read
+        input_schema:
+          type: object
+          required: [text]
+          properties:
+            text:
+              type: string
+            upper:
+              type: boolean
+              default: false
+        provider_config:
+          argv_template:
+            - python3
+            - -c
+            - |
+              import json, sys
+              text = sys.argv[1]
+              upper = sys.argv[2].lower() == "true"
+              if upper:
+                  text = text.upper()
+              print(json.dumps({"text": text, "upper": upper}))
+            - "{text}"
+            - "{upper}"
+          output:
+            mode: json
+
+mounts:
+  - id: demo-echo
+    source: demo_cli
+    operation: echo_json
+    command:
+      path: [demo, echo]

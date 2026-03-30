@@ -456,12 +456,21 @@ cts inspect mount <id> --render-request
 
 这样在接 HTTP、CLI、MCP 时都能快速定位问题。
 
-也建议支持：
+长期也建议支持更直接的日志 CLI：
 
 ```bash
 cts logs tail
 cts logs show --run-id <id>
 cts logs config
+```
+
+当前仓库已提供的相近入口是：
+
+```bash
+cts runs list
+cts runs show <run-id>
+cts doctor
+cts inspect drift [source]
 ```
 
 对 AI/自动化系统还建议提供：

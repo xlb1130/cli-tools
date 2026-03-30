@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
@@ -10,12 +10,16 @@ from typing import Any, Dict, List, Optional, Sequence
 
 DEFAULT_REDACT_FIELDS = {"authorization", "x-api-key", "token", "password", "secret", "api_key"}
 
+# Global config load events buffer (used before app is available)
+_config_load_events: List[Dict[str, Any]] = []
+
 
 @dataclass
 class RuntimePaths:
     app_log: Path
     audit_log: Path
     history_db: Path
+    config_log: Path  # New: dedicated config load log
 
 
 def resolve_runtime_paths(app: Any) -> RuntimePaths:
@@ -26,7 +30,8 @@ def resolve_runtime_paths(app: Any) -> RuntimePaths:
     app_log = _resolve_optional_path(app, sinks.get("app"), log_dir / "app.jsonl")
     audit_log = _resolve_optional_path(app, sinks.get("audit"), log_dir / "audit.jsonl")
     history_db = _resolve_optional_path(app, sinks.get("history"), state_dir / "history.db")
-    return RuntimePaths(app_log=app_log, audit_log=audit_log, history_db=history_db)
+    config_log = _resolve_optional_path(app, sinks.get("config"), log_dir / "config.jsonl")
+    return RuntimePaths(app_log=app_log, audit_log=audit_log, history_db=history_db, config_log=config_log)
 
 
 def emit_app_event(
@@ -94,6 +99,156 @@ def emit_audit_event(
         _append_jsonl(paths.audit_log, payload)
     except Exception:
         return None
+
+
+# =============================================================================
+# Config Load Logging (works before app is fully initialized)
+# =============================================================================
+
+def get_default_config_log_path() -> Path:
+    """Get default config log path."""
+    return Path("~/.local/state/cts/logs/config.jsonl").expanduser()
+
+
+def emit_config_event(
+    *,
+    event: str,
+    level: str = "INFO",
+    message: Optional[str] = None,
+    data: Optional[Dict[str, Any]] = None,
+    path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Emit a config load event. Works before app is initialized.
+    
+    Events are buffered and can be flushed later when app is available.
+    """
+    global _config_load_events
+    
+    payload = {
+        "ts": utc_now_iso(),
+        "level": level,
+        "event": event,
+        "message": message,
+        "path": path,
+        "data": data or {},
+    }
+    
+    # Buffer the event
+    _config_load_events.append(payload)
+    
+    # Also write to default log file
+    try:
+        log_path = get_default_config_log_path()
+        _append_jsonl(log_path, payload)
+    except Exception:
+        pass
+    
+    return payload
+
+
+def flush_config_events(app: Any) -> None:
+    """Flush buffered config events to app's configured log path."""
+    global _config_load_events
+    
+    if not _config_load_events:
+        return
+    
+    try:
+        paths = resolve_runtime_paths(app)
+        for event in _config_load_events:
+            _append_jsonl(paths.config_log, event)
+        _config_load_events = []
+    except Exception:
+        pass
+
+
+def get_config_events(app: Any, *, limit: int = 100, before_ts: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Get config load events from log file."""
+    try:
+        paths = resolve_runtime_paths(app)
+        log_path = paths.config_log
+    except Exception:
+        log_path = get_default_config_log_path()
+    
+    if not log_path.exists():
+        return []
+    
+    try:
+        lines = log_path.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return []
+    
+    results: List[Dict[str, Any]] = []
+    for raw in reversed(lines):
+        if not raw.strip():
+            continue
+        try:
+            payload = json.loads(raw)
+        except Exception:
+            continue
+        if before_ts and str(payload.get("ts") or "") >= str(before_ts):
+            continue
+        results.append(payload)
+        if len(results) >= limit:
+            break
+    
+    return results
+
+
+def clear_config_events() -> None:
+    """Clear buffered config events."""
+    global _config_load_events
+    _config_load_events = []
+
+
+# =============================================================================
+# Discovery & Schema Import Logging
+# =============================================================================
+
+def emit_discovery_event(
+    app: Any,
+    *,
+    event: str,
+    level: str = "INFO",
+    source_name: Optional[str] = None,
+    provider_type: Optional[str] = None,
+    message: Optional[str] = None,
+    data: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Emit a discovery/schema import event."""
+    try:
+        paths = resolve_runtime_paths(app)
+        payload = {
+            "ts": utc_now_iso(),
+            "level": level,
+            "event": event,
+            "source": source_name,
+            "provider_type": provider_type,
+            "message": message,
+            "data": data or {},
+            "profile": getattr(app, "active_profile", None),
+        }
+        _append_jsonl(paths.app_log, payload)
+    except Exception:
+        return None
+
+
+def get_discovery_events(
+    app: Any,
+    *,
+    limit: int = 100,
+    source: Optional[str] = None,
+    event_prefix: Optional[str] = None,
+    before_ts: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Get discovery events from app log."""
+    return list_app_events(
+        app,
+        limit=limit,
+        event_prefixes=[event_prefix] if event_prefix else ["discovery.", "schema.", "sync."],
+        source=source,
+        before_ts=before_ts,
+    )
 
 
 def record_run(app: Any, record: Dict[str, Any]) -> None:
