@@ -46,7 +46,7 @@ export function MountDetailPage() {
   const schemaFields = getSchemaFields(schema);
   const currentInput = parseInputObject(inputText, true);
   const recentRuns = (runsQuery.data ?? []).filter((item) => item.mount_id === mountId).slice(0, 5);
-  const invokeExample = `cts invoke ${mount.mount_id} --input-json '${inputText.replace(/\n/g, " ")}' --format json`;
+  const invokeExample = `cts manage invoke ${mount.mount_id} --input-json '${inputText.replace(/\n/g, " ")}' --format json`;
 
   const handleExplain = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -171,7 +171,7 @@ export function MountDetailPage() {
           <div className="stack">
             <div>
               <p className="eyebrow">Explain</p>
-              <p className="code-line">cts explain {mount.mount_id} --input-json '{`{"text":"hello"}`}' --format json</p>
+              <p className="code-line">cts manage explain {mount.mount_id} --input-json '{`{"text":"hello"}`}' --format json</p>
             </div>
             <div>
               <p className="eyebrow">Invoke</p>

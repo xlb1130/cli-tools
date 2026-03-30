@@ -741,7 +741,7 @@ mounts:
       description: 查询指定仓库的 issue 列表。
       examples:
         - "cts dev github issues list --repo owner/repo"
-        - "cts invoke github-list-issues --input-json '{\"repo\":\"owner/repo\"}'"
+        - "cts manage invoke github-list-issues --input-json '{\"repo\":\"owner/repo\"}'"
       notes:
         - "需要 GitHub MCP server 已配置"
       param_overrides:

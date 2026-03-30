@@ -506,9 +506,9 @@ Hook SDK 必须遵守：
 例如：
 
 - `mcp_cli` provider 是 southbound
-- `cts serve mcp` 是 northbound
+- `cts manage serve mcp` 是 northbound
 - `http` provider 是 southbound
-- `cts serve http` 是 northbound
+- `cts manage serve http` 是 northbound
 
 这能避免“既是接入协议，又是暴露协议”的概念混杂。
 

@@ -199,7 +199,7 @@ class CompatibilityChecker:
                 object_type="config",
                 current_version=str(config_version),
                 required_version=str(self.MIN_SUPPORTED_CONFIG_VERSION),
-                suggestion="Run 'cts config migrate' to upgrade the configuration.",
+                suggestion="Run 'cts manage config migrate' to upgrade the configuration.",
             ))
         elif config_version > self.MAX_SUPPORTED_CONFIG_VERSION:
             self._add_issue(CompatibilityIssue(

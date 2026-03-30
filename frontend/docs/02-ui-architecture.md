@@ -12,7 +12,7 @@
 
 ```mermaid
 flowchart LR
-  A["cts config files"] --> B["Python cts runtime"]
+  A["cts manage config files"] --> B["Python cts runtime"]
   C["discovery cache"] --> B
   D["provider registry"] --> B
   B --> E["local HTTP API"]
@@ -118,7 +118,7 @@ frontend/app/
 ### 5.1 启动流程
 
 ```text
-cts serve http --ui
+cts manage serve http --ui
 -> 读取 config + cache
 -> 构建 registry + catalog
 -> 启动 API
@@ -159,7 +159,7 @@ cts serve http --ui
 - 查看 capability card
 - 查看输入 schema
 - 查看 explain 结果
-- 复制 `cts invoke` 示例
+- 复制 `cts manage invoke` 示例
 - 复制人类路径示例
 
 ## 7. 状态管理建议
@@ -197,4 +197,3 @@ cts serve http --ui
 
 - 前端不重写核心逻辑
 - 统一通过 `cts` 后端服务读取规范化数据
-

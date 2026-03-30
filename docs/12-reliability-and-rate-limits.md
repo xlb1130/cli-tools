@@ -297,7 +297,7 @@ workflow 要额外处理：
 
 ## 11. 前端和 AI 应看到什么
 
-前端页面与 `cts explain` 建议展示：
+前端页面与 `cts manage explain` 建议展示：
 
 - 是否可自动重试
 - 默认超时

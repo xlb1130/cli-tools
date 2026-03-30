@@ -114,10 +114,10 @@ cts --config cts.yaml mycli greet --name World
 cts import cli mycmd --exec "..." --format json
 
 # 查看生成的配置
-cts --config cts.yaml config build
+cts --config cts.yaml manage config build
 
 # 检查配置有效性
-cts --config cts.yaml config lint
+cts --config cts.yaml manage config lint
 ```
 
 ---

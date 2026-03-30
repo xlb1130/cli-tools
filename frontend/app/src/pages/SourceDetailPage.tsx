@@ -67,7 +67,7 @@ export function SourceDetailPage() {
             icon="sources"
             eyebrow="Source Detail"
             title={source.name}
-            description="这里把 `source show` 和 `source test` 收口到同一个交互页里，既能看编译后的 source 详情，也能直接跑健康检查和 discover。"
+            description="这里把 source 管理入口收口到同一个交互页里，既能看编译后的 source 详情，也能直接跑健康检查和 discover。"
             compact
           />
           {actionMessage ? <div className="inline-note">{actionMessage}</div> : null}
@@ -102,7 +102,7 @@ export function SourceDetailPage() {
       </section>
 
       <div className="content-grid two-col">
-        <Panel title="Show Summary" subtitle="对应 `cts source show` 的主信息" kicker="Read Model">
+        <Panel title="Show Summary" subtitle="对应 `cts manage source show` 的主信息" kicker="Read Model">
           <dl className="detail-grid">
             <div>
               <dt>Name</dt>
@@ -133,7 +133,7 @@ export function SourceDetailPage() {
 
         <Panel
           title="Test Actions"
-          subtitle="对应 `cts source test` 与 `cts source test --discover`"
+          subtitle="对应 `cts manage source test` 与 `cts manage source test --discover`"
           kicker="Write Actions"
           actions={
             <div className="explain-actions">
@@ -175,7 +175,7 @@ export function SourceDetailPage() {
               <JsonViewer data={testMutation.data} />
             </div>
           ) : (
-            <div className="state">还没有执行 source test。</div>
+            <div className="state">还没有执行 source health check。</div>
           )}
         </Panel>
       </div>
@@ -214,7 +214,7 @@ export function SourceDetailPage() {
       </div>
 
       <div className="content-grid two-col">
-        <Panel title="Source Payload" subtitle="完整 source show 结构" kicker="Raw View">
+        <Panel title="Source Payload" subtitle="完整 `manage source show` 结构" kicker="Raw View">
           <JsonViewer data={source} />
         </Panel>
         <Panel title="Discovery State" subtitle={`最后更新时间 ${formatDate(String(source.discovery_state?.updated_at || ""))}`} kicker="State Cache">

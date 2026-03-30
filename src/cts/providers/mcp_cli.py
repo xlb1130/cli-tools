@@ -351,10 +351,11 @@ def _resolve_transport_type(source_config: SourceConfig, app: "CTSApp") -> str:
 
 def _supports_mcp_cli_noninteractive(server_config: Dict[str, Any]) -> bool:
     transport_type = str(server_config.get("type") or ("streamable_http" if server_config.get("url") else "stdio")).lower()
-    # mcp-cli supports stdio, sse, and streamable_http for non-interactive operations
-    return transport_type in {"stdio", "sse", "streamable_http"} and (
+    # Prefer the Node bridge for streamable_http because some mcp-cli builds
+    # fail non-interactive tool calls on remote HTTP transports.
+    return transport_type in {"stdio", "sse"} and (
         transport_type == "stdio" and bool(server_config.get("command")) or
-        transport_type in {"sse", "streamable_http"} and bool(server_config.get("url"))
+        transport_type == "sse" and bool(server_config.get("url"))
     )
 
 

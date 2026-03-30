@@ -148,6 +148,11 @@ def main(ctx: click.Context, config_path: Optional[Path], profile: Optional[str]
 
 
 @main.group()
+def manage() -> None:
+    """CTS administration and maintenance commands."""
+
+
+@manage.group()
 def config() -> None:
     """Configuration inspection commands."""
 
@@ -304,7 +309,7 @@ def config_migrate(ctx: click.Context, dry_run: bool, output_format: str) -> Non
         _fail(ctx, exc, "config_migrate", output_format)
 
 
-@main.group()
+@manage.group()
 def source() -> None:
     """Source registry operations."""
 
@@ -1652,7 +1657,7 @@ def _execute_import_mcp(
     }
 
 
-@main.group()
+@manage.group()
 def mount() -> None:
     """Mount registry operations."""
 
@@ -1918,9 +1923,9 @@ def mount_import(
     APIs or CLI tools.
     
     Examples:
-        cts mount import my-api --dry-run
-        cts mount import my-api --prefix api --under api
-        cts mount import my-api --filter "get_*" --filter "list_*"
+        cts manage mount import my-api --dry-run
+        cts manage mount import my-api --prefix api --under api
+        cts manage mount import my-api --filter "get_*" --filter "list_*"
     """
     import fnmatch
     
@@ -2069,7 +2074,7 @@ def mount_import(
         _fail(ctx, exc, "mount_import", output_format)
 
 
-@main.group("alias")
+@manage.group("alias")
 def alias_group() -> None:
     """Top-level alias operations."""
 
@@ -2194,7 +2199,7 @@ def alias_remove(ctx: click.Context, alias_from: str, target_file: Optional[Path
         _fail(ctx, exc, "alias_remove", output_format)
 
 
-@main.group()
+@manage.group()
 def catalog() -> None:
     """Catalog export commands."""
 
@@ -2206,7 +2211,7 @@ def catalog_export(app: CTSApp, output_format: str) -> None:
     click.echo(render_payload(app.export_catalog(), output_format))
 
 
-@main.command("docs")
+@manage.command("docs")
 @click.argument("output_dir", type=click.Path(path_type=Path), default=Path("docs/generated"))
 @click.option("--title", default="CTS Documentation", help="Documentation title.")
 @click.option("--format", "doc_format", type=click.Choice(["markdown", "html", "json"]), default="markdown")
@@ -2249,7 +2254,7 @@ def docs_generate(
     click.echo(render_payload(payload, output_format))
 
 
-@main.group()
+@manage.group()
 def workflow() -> None:
     """Workflow management commands."""
 
@@ -2336,7 +2341,7 @@ def workflow_execute(
     click.echo(render_payload(payload, output_format))
 
 
-@main.group()
+@manage.group()
 def inspect() -> None:
     """Inspect compiled sources, mounts, and operations."""
 
@@ -2400,7 +2405,7 @@ def inspect_drift(app: CTSApp, source_name: Optional[str], output_format: str) -
             RegistryError(
                 "no sync report available",
                 code="drift_report_not_found",
-                suggestions=["先执行 `cts sync`，再查看 drift 结果。"],
+                suggestions=["先执行 `cts manage sync`，再查看 drift 结果。"],
             ),
             "inspect_drift",
             output_format,
@@ -2440,7 +2445,7 @@ def inspect_drift(app: CTSApp, source_name: Optional[str], output_format: str) -
     click.echo(render_payload(payload, output_format))
 
 
-@main.command(
+@manage.command(
     help="Invoke a mounted capability with validated input.",
     short_help="Invoke a mounted capability with validated input.",
 )
@@ -2480,7 +2485,7 @@ def invoke(
     _run_mount_command(app, mount, kwargs, mode="invoke")
 
 
-@main.command(
+@manage.command(
     help="Explain how a mounted capability would execute without running it.",
     short_help="Explain how a mounted capability would execute without running it.",
 )
@@ -2509,7 +2514,7 @@ def explain(app: CTSApp, mount_id: str, input_json: Optional[str], input_file: O
     _run_mount_command(app, mount, kwargs, mode="explain")
 
 
-@main.command(
+@manage.command(
     help="Run discovery sync for one source or the whole registry.",
     short_help="Run discovery sync for one source or the whole registry.",
 )
@@ -2521,7 +2526,7 @@ def sync(app: CTSApp, source_name: Optional[str], output_format: str) -> None:
     click.echo(render_payload(payload, output_format))
 
 
-@main.group()
+@manage.group()
 def reconcile() -> None:
     """Drift reconciliation commands."""
 
@@ -2539,7 +2544,7 @@ def reconcile_drift(app: CTSApp, source_name: str, reconcile_action: str, output
             RegistryError(
                 "no sync report available",
                 code="drift_report_not_found",
-                suggestions=["先执行 `cts sync`，再执行 drift reconcile。"],
+                suggestions=["先执行 `cts manage sync`，再执行 drift reconcile。"],
             ),
             "reconcile_drift",
             output_format,
@@ -2556,7 +2561,7 @@ def reconcile_drift(app: CTSApp, source_name: str, reconcile_action: str, output
             RegistryError(
                 f"no blocking drift found for source: {source_name}",
                 code="drift_not_reconcilable",
-                suggestions=["先执行 `cts inspect drift " + source_name + "` 查看当前 drift 状态。"],
+                suggestions=["先执行 `cts manage inspect drift " + source_name + "` 查看当前 drift 状态。"],
             ),
             "reconcile_drift",
             output_format,
@@ -2594,7 +2599,7 @@ def reconcile_drift(app: CTSApp, source_name: str, reconcile_action: str, output
     click.echo(render_payload(payload, output_format))
 
 
-@main.group()
+@manage.group()
 def auth() -> None:
     """Authentication status commands."""
 
@@ -2715,8 +2720,8 @@ def auth_validate(app: CTSApp, name: Optional[str], validate_all: bool, output_f
     missing credentials, or configuration problems.
     
     Examples:
-        cts auth validate my-profile
-        cts auth validate --all
+        cts manage auth validate my-profile
+        cts manage auth validate --all
     """
     try:
         if validate_all or not name:
@@ -2728,7 +2733,7 @@ def auth_validate(app: CTSApp, name: Optional[str], validate_all: bool, output_f
         _fail(click.get_current_context(), exc, "auth_validate", output_format)
 
 
-@main.group()
+@manage.group()
 def secret() -> None:
     """Secret inventory commands."""
 
@@ -2751,7 +2756,7 @@ def secret_show(app: CTSApp, name: str, output_format: str) -> None:
         _fail(click.get_current_context(), exc, "secret_show", output_format)
 
 
-@main.group()
+@manage.group()
 def runs() -> None:
     """Run history inspection commands."""
 
@@ -2777,7 +2782,7 @@ def runs_show(app: CTSApp, run_id: str, output_format: str) -> None:
     click.echo(render_payload(payload, output_format))
 
 
-@main.group()
+@manage.group()
 def completion() -> None:
     """Shell completion helpers."""
 
@@ -2815,9 +2820,9 @@ def completion_install(
     For fish, completion is added to ~/.config/fish/completions/cts.fish.
     
     Examples:
-        cts completion install
-        cts completion install --shell bash
-        cts completion install --shell zsh --file ~/.zshrc
+        cts manage completion install
+        cts manage completion install --shell bash
+        cts manage completion install --shell zsh --file ~/.zshrc
     """
     import os
     import re
@@ -2933,8 +2938,8 @@ def completion_bootstrap(shell_name: Optional[str], output_format: str) -> None:
     shell profile manually.
     
     Examples:
-        eval $(cts completion bootstrap)
-        eval $(cts completion bootstrap --shell zsh)
+        eval $(cts manage completion bootstrap)
+        eval $(cts manage completion bootstrap --shell zsh)
     """
     import os
     
@@ -2976,7 +2981,7 @@ def completion_bootstrap(shell_name: Optional[str], output_format: str) -> None:
         click.echo(completion_source)
 
 
-@main.group()
+@manage.group()
 def serve() -> None:
     """Northbound surface commands."""
 
@@ -3063,7 +3068,7 @@ def serve_http_command(app: CTSApp, host: str, port: int, serve_ui: bool, ui_dir
     )
 
 
-@main.command("ui")
+@manage.command("ui")
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", type=int, default=8787, show_default=True)
 @click.option("--ui-dir", type=click.Path(path_type=Path, file_okay=False), default=None, help="Explicit frontend dist directory.")
@@ -3122,7 +3127,7 @@ def serve_mcp_command(app: CTSApp, host: str, port: int) -> None:
     serve_mcp(app, host=host, port=port)
 
 
-@main.command(
+@manage.command(
     help="Run health, config, and runtime diagnostics.",
     short_help="Run health, config, and runtime diagnostics.",
 )

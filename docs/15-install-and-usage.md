@@ -171,7 +171,7 @@ UI 主要用来查看：
 先启动后端：
 
 ```bash
-cts --config <your-config> serve http
+cts --config <your-config> manage serve http
 ```
 
 再启动前端开发服务器：
@@ -207,19 +207,19 @@ npm run build
 然后让 `cts` 同时提供 API 和 UI：
 
 ```bash
-cts --config <your-config> serve http --ui
+cts --config <your-config> manage serve http --ui
 ```
 
 如果希望启动后自动打开浏览器：
 
 ```bash
-cts --config <your-config> serve http --ui --open
+cts --config <your-config> manage serve http --ui --open
 ```
 
 如果静态目录不在默认位置，可显式指定：
 
 ```bash
-cts --config <your-config> serve http --ui-dir src/cts/ui_dist
+cts --config <your-config> manage serve http --ui-dir src/cts/ui_dist
 ```
 
 启动后，`cts` 会输出一个 JSON，其中包含：
@@ -259,10 +259,10 @@ cts --version
 ### 5.2 配置检查
 
 ```bash
-cts --config cts.yaml config paths
-cts --config cts.yaml config build --format yaml
-cts --config cts.yaml config lint --format json
-cts --config cts.yaml config lint --compile --format json
+cts --config cts.yaml manage config paths
+cts --config cts.yaml manage config build --format yaml
+cts --config cts.yaml manage config lint --format json
+cts --config cts.yaml manage config lint --compile --format json
 ```
 
 ### 5.3 最短导入路径
@@ -301,16 +301,16 @@ cts --config cts.yaml import wizard
 ### 5.4 source 管理
 
 ```bash
-cts --config cts.yaml source add http jira \
+cts --config cts.yaml manage source add http jira \
   --base-url https://jira.example.com \
   --format json
 ```
 
 ```bash
-cts --config cts.yaml source list
-cts --config cts.yaml source show jira --format json
-cts --config cts.yaml source test jira --format json
-cts --config cts.yaml source remove jira --format json
+cts --config cts.yaml manage source list
+cts --config cts.yaml manage source show jira --format json
+cts --config cts.yaml manage source test jira --format json
+cts --config cts.yaml manage source remove jira --format json
 ```
 
 这组命令更适合：
@@ -322,7 +322,7 @@ cts --config cts.yaml source remove jira --format json
 ### 5.5 mount 管理
 
 ```bash
-cts --config cts.yaml mount add jira get_issue \
+cts --config cts.yaml manage mount add jira get_issue \
   --id jira-get-issue \
   --path "ops jira issue get" \
   --summary "Get issue" \
@@ -332,9 +332,9 @@ cts --config cts.yaml mount add jira get_issue \
 ```
 
 ```bash
-cts --config cts.yaml mount list
-cts --config cts.yaml mount show jira-get-issue --format json
-cts --config cts.yaml mount remove jira-get-issue --format json
+cts --config cts.yaml manage mount list
+cts --config cts.yaml manage mount show jira-get-issue --format json
+cts --config cts.yaml manage mount remove jira-get-issue --format json
 ```
 
 这组命令更适合：
@@ -353,7 +353,7 @@ cts --config cts.yaml ops jira issue get --key PROJ-123 --output json
 通过稳定 ID 调用：
 
 ```bash
-cts --config cts.yaml invoke jira-get-issue \
+cts --config cts.yaml manage invoke jira-get-issue \
   --input-json '{"key":"PROJ-123"}' \
   --format json
 ```
@@ -361,7 +361,7 @@ cts --config cts.yaml invoke jira-get-issue \
 查看执行计划：
 
 ```bash
-cts --config cts.yaml explain jira-get-issue \
+cts --config cts.yaml manage explain jira-get-issue \
   --input-json '{"key":"PROJ-123"}' \
   --format json
 ```
@@ -373,14 +373,14 @@ cts --config cts.yaml explain jira-get-issue \
 当前 CLI 还包含以下命令族：
 
 ```bash
-cts catalog export --format json
-cts doctor --format json
-cts inspect source <name> --format json
-cts inspect mount <id> --format json
-cts runs list --format json
-cts completion --help
-cts docs --help
-cts workflow --help
+cts manage catalog export --format json
+cts manage doctor --format json
+cts manage inspect source <name> --format json
+cts manage inspect mount <id> --format json
+cts manage runs list --format json
+cts manage completion --help
+cts manage docs --help
+cts manage workflow --help
 ```
 
 其中：
@@ -398,10 +398,10 @@ cts workflow --help
 如果你是开发者，或者已经把这个仓库安装到了本地，可以直接运行：
 
 ```bash
-cts --config examples/demo/cts.yaml config lint --compile --format json
+cts --config examples/demo/cts.yaml manage config lint --compile --format json
 cts --config examples/demo/cts.yaml demo echo --help
 cts --config examples/demo/cts.yaml demo echo --text hello --upper --output json
-cts --config examples/demo/cts.yaml invoke demo-echo --input-json '{"text":"hello","upper":true}' --format json
+cts --config examples/demo/cts.yaml manage invoke demo-echo --input-json '{"text":"hello","upper":true}' --format json
 ```
 
 ## 8. 开发者从源码安装
@@ -439,7 +439,7 @@ pytest tests/test_cli_management.py
 ### 8.3 前端开发
 
 ```bash
-cts --config examples/demo/cts.yaml serve http
+cts --config examples/demo/cts.yaml manage serve http
 cd frontend/app
 npm install
 npm run dev
@@ -451,7 +451,7 @@ npm run dev
 cd frontend/app
 npm install
 npm run build
-cts --config examples/demo/cts.yaml serve http --ui --open
+cts --config examples/demo/cts.yaml manage serve http --ui --open
 ```
 
 ## 9. 相关文档

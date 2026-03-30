@@ -42,9 +42,9 @@
 
 用于 northbound 稳定消费，例如：
 
-- `cts catalog export`
-- `cts explain`
-- `cts invoke` 的 JSON 输入输出结构
+- `cts manage catalog export`
+- `cts manage explain`
+- `cts manage invoke` 的 JSON 输入输出结构
 
 ### 2.5 Cache / State Schema 版本
 
@@ -69,7 +69,7 @@
 
 - `mount.id`
 - `machine.stable_name`
-- `cts invoke <mount-id>` 的调用语义
+- `cts manage invoke <mount-id>` 的调用语义
 - `ErrorEnvelope.type/code`
 - capability card 的核心字段
 
@@ -106,7 +106,7 @@ version: 1
 
 - 同一主版本内可做向后兼容新增
 - 出现删除字段、语义变化、默认行为重大变化时再升级主版本
-- `cts config migrate` 负责把旧配置改写到新版本
+- `cts manage config migrate` 负责把旧配置改写到新版本
 
 ## 4.2 Provider SDK 版本
 
@@ -280,15 +280,15 @@ mounts:
 - 配置可加载
 - mount 仍能解析
 - capability card 仍能生成
-- `cts invoke` / `cts explain` 合同未破坏
+- `cts manage invoke` / `cts manage explain` 合同未破坏
 
 ## 8. 建议的命令
 
-- `cts config migrate`
-- `cts doctor compatibility`
-- `cts inspect versions`
-- `cts sync --check-drift`
-- `cts catalog export --versioned`
+- `cts manage config migrate`
+- `cts manage doctor compatibility`
+- `cts manage inspect versions`
+- `cts manage sync --check-drift`
+- `cts manage catalog export --versioned`
 
 这些命令不一定第一阶段都实现，但模型上建议预留。
 
@@ -321,7 +321,7 @@ AI 或脚本最怕“名字没变，但语义变了”。
 - `mount.id` 语义变化时必须视为 breaking change
 - `machine.stable_name` 如果改名，必须给 replacement
 - capability card 增加 `deprecated` 与 `replacement_mount_id`
-- `cts invoke` 返回中可附带 deprecation warning，但不能悄悄换行为
+- `cts manage invoke` 返回中可附带 deprecation warning，但不能悄悄换行为
 
 ## 11. 最终建议
 

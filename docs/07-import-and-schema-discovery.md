@@ -226,10 +226,10 @@ CLI 是最复杂的一类。
 
 当前 MVP 已有：
 
-- `cts source import-help`
-- `cts source import-completion`
-- `cts source import-manpage`
-- `cts source import-schema`
+- `cts manage source import-help`
+- `cts manage source import-completion`
+- `cts manage source import-manpage`
+- `cts manage source import-schema`
 
 其中 `import-manpage` 当前先支持 plain-text man page 输入，例如：
 

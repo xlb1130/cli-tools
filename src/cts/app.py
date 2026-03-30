@@ -359,7 +359,7 @@ class CTSApp:
             code=code,
             details={"mount_id": mount.mount_id, "action": action, "drift_state": drift_state},
             suggestions=[
-                "先执行 `cts inspect drift "
+                "先执行 `cts manage inspect drift "
                 + mount.source_name
                 + "` 查看最近一次 drift 分类和受影响原因。",
                 "如果确认变更可接受，再执行后续的 drift reconcile 流程。",

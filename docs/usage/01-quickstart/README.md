@@ -30,13 +30,13 @@ cts import mcp my-mcp --server-config '{"type":"sse","url":"https://mcp.api-infe
 cts my-mcp <tool-name> --param value
 
 # 看看当前挂载了什么
-cts mount list
+cts manage mount list
 
 # 用稳定 ID 调用
-cts invoke hello
+cts manage invoke hello
 
 # 预览执行计划
-cts explain hello
+cts manage explain hello
 ```
 
 ---

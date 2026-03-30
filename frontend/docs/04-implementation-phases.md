@@ -93,7 +93,7 @@
 长期建议最终提供：
 
 ```bash
-cts ui
+cts manage ui
 ```
 
 内部行为：
@@ -106,13 +106,13 @@ cts ui
 当前仓库已经可用的方式是：
 
 ```bash
-cts serve http --ui
+cts manage serve http --ui
 ```
 
 前端开发联调时也可以使用：
 
 ```bash
-cts serve http
+cts manage serve http
 pnpm dev
 ```
 

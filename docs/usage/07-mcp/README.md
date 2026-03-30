@@ -65,7 +65,7 @@ servers.json：
 
 ```bash
 # 批量导入 tools
-cts --config cts.yaml mount import my_mcp --under my
+cts --config cts.yaml manage mount import my_mcp --under my
 
 # 执行
 cts --config cts.yaml my <tool-name> --param value
@@ -83,7 +83,7 @@ cts import mcp my-mcp --server-config '{"type":"sse","url":"https://..."}' --und
 cts import mcp my-mcp --server-config '{"type":"sse","url":"https://..."}' --format json
 
 # 验证 discovery
-cts --config cts.yaml source test my_mcp --discover --format json
+cts --config cts.yaml manage source test my_mcp --discover --format json
 ```
 
 ---

@@ -47,8 +47,8 @@ mounts:
 示例：
 
 ```bash
-cts --config cts.yaml source test petstore --discover --format json
-cts --config cts.yaml mount import petstore --under petstore
+cts --config cts.yaml manage source test petstore --discover --format json
+cts --config cts.yaml manage mount import petstore --under petstore
 ```
 
 ## 它和手工 HTTP 的主要差别

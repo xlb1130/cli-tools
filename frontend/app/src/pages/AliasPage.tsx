@@ -58,7 +58,7 @@ export function AliasPage() {
             icon="aliases"
             eyebrow="Aliases"
             title="Alias 管理界面"
-            description="这里对应 `cts alias list/add/remove`，适合给常用 mount 做更好记的命令入口。"
+            description="这里对应 `cts manage alias list/add/remove`，适合给常用 mount 做更好记的命令入口。"
           />
           {message ? <div className="inline-note">{message}</div> : null}
           {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}

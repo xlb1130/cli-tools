@@ -306,15 +306,15 @@ class AuthManager:
         
         elif state == "login_required":
             issues.append({"code": "login_required", "message": "Login is required"})
-            actions.append({"action": "login", "command": f"cts auth login {name}"})
+            actions.append({"action": "login", "command": f"cts manage auth login {name}"})
         
         elif state == "expired":
             issues.append({"code": "expired", "message": "Session has expired"})
             profile_obj = self.app.config.auth_profiles.get(name, {})
             if profile_obj.get("refresh", {}).get("enabled"):
-                actions.append({"action": "refresh", "command": f"cts auth refresh {name}"})
+                actions.append({"action": "refresh", "command": f"cts manage auth refresh {name}"})
             else:
-                actions.append({"action": "login", "command": f"cts auth login {name}"})
+                actions.append({"action": "login", "command": f"cts manage auth login {name}"})
         
         elif state == "expiring":
             profile_obj = self.app.config.auth_profiles.get(name, {})
@@ -324,11 +324,11 @@ class AuthManager:
         
         elif state == "failed":
             issues.append({"code": "failed", "message": status.get("reason", "Authentication failed")})
-            actions.append({"action": "retry", "command": f"cts auth login {name}"})
+            actions.append({"action": "retry", "command": f"cts manage auth login {name}"})
         
         elif state == "revoked":
             issues.append({"code": "revoked", "message": "Session has been revoked"})
-            actions.append({"action": "login", "command": f"cts auth login {name}"})
+            actions.append({"action": "login", "command": f"cts manage auth login {name}"})
         
         valid = state in AUTH_ACTIVE_STATES
         

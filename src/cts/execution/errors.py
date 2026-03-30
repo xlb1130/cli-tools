@@ -102,7 +102,7 @@ def classify_exception(exc: Exception, stage: str) -> ErrorClassification:
             details={},
             suggestions=[
                 "检查配置文件路径、YAML/JSON 语法以及 imports 配置。",
-                "可以先执行 `cts config lint --format json` 查看结构化结果。",
+                "可以先执行 `cts manage config lint --format json` 查看结构化结果。",
             ],
         )
 
@@ -142,7 +142,7 @@ def classify_exception(exc: Exception, stage: str) -> ErrorClassification:
             details={},
             suggestions=[
                 "稍后重试，或提高 source/mount 的 timeout 配置。",
-                "如果是上游服务慢，先用 `cts explain` 确认最终请求。",
+                "如果是上游服务慢，先用 `cts manage explain` 确认最终请求。",
             ],
         )
 
@@ -158,7 +158,7 @@ def classify_exception(exc: Exception, stage: str) -> ErrorClassification:
                 details={},
                 suggestions=[
                     "检查必填参数、类型和枚举值是否满足 schema。",
-                    "先执行 `cts explain <mount-id> --format json` 查看标准化请求。",
+                    "先执行 `cts manage explain <mount-id> --format json` 查看标准化请求。",
                 ],
             )
         return ErrorClassification(
@@ -170,7 +170,7 @@ def classify_exception(exc: Exception, stage: str) -> ErrorClassification:
             details={},
             suggestions=[
                 "检查 source/provider 配置是否完整。",
-                "先执行 `cts source test <source-name>` 或 `cts doctor --format json` 排查 provider 状态。",
+                "先执行 `cts manage source test <source-name>` 或 `cts manage doctor --format json` 排查 provider 状态。",
             ],
         )
 
@@ -193,9 +193,9 @@ def _default_suggestions(exc: Exception, stage: str) -> List[str]:
     if stage == "config_load":
         return ["检查配置文件是否存在且格式正确。"]
     if stage == "config_lint":
-        return ["修复配置后重新执行 `cts config lint`。"]
+        return ["修复配置后重新执行 `cts manage config lint`。"]
     if stage in {"invoke", "explain"}:
-        return ["查看结构化错误详情并结合 `cts doctor` 或 `cts inspect` 继续排查。"]
+        return ["查看结构化错误详情并结合 `cts manage doctor` 或 `cts manage inspect` 继续排查。"]
     if stage.startswith("inspect") or stage.startswith("show"):
         return ["检查资源 id/name 是否正确，可先执行 list 命令确认。"]
     return ["查看结构化错误详情进一步排查。"]

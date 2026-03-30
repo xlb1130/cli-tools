@@ -37,7 +37,7 @@ cts dev github issues list --repo owner/repo
 例如：
 
 ```bash
-cts invoke github-list-issues --input-json '{"repo":"owner/repo"}' --output json
+cts manage invoke github-list-issues --input-json '{"repo":"owner/repo"}' --output json
 ```
 
 这应该是 AI、脚本、CI、自动化系统的首选入口。
@@ -53,8 +53,8 @@ cts invoke github-list-issues --input-json '{"repo":"owner/repo"}' --output json
 例如：
 
 ```bash
-cts serve http --bind 127.0.0.1:7788
-cts serve jsonrpc --bind 127.0.0.1:7789
+cts manage serve http --bind 127.0.0.1:7788
+cts manage serve jsonrpc --bind 127.0.0.1:7789
 ```
 
 适合：
@@ -68,7 +68,7 @@ cts serve jsonrpc --bind 127.0.0.1:7789
 例如：
 
 ```bash
-cts serve mcp
+cts manage serve mcp
 ```
 
 这会把 `cts` 已挂载的能力重新暴露为一个 MCP server，让 Claude、Cursor、Codex、其他 agent 平台可以直接消费。
@@ -141,7 +141,7 @@ stable_name = jira.issue.get
 推荐命令：
 
 ```bash
-cts invoke jira-get-issue --input-json '{"key":"ABC-123"}' --output json --non-interactive
+cts manage invoke jira-get-issue --input-json '{"key":"ABC-123"}' --output json --non-interactive
 ```
 
 ## 6. Explain / Plan / Dry-run
@@ -157,8 +157,8 @@ AI 系统特别需要在执行前理解“将要发生什么”。
 示例：
 
 ```bash
-cts explain jira-get-issue --input-json '{"key":"ABC-123"}'
-cts invoke jira-get-issue --input-json '{"key":"ABC-123"}' --dry-run
+cts manage explain jira-get-issue --input-json '{"key":"ABC-123"}'
+cts manage invoke jira-get-issue --input-json '{"key":"ABC-123"}' --dry-run
 ```
 
 Explain 输出建议包括：
@@ -177,8 +177,8 @@ AI 要真正好用，必须能拿到完整能力目录。
 建议提供：
 
 ```bash
-cts catalog export --format json
-cts inspect mount github-list-issues --format json
+cts manage catalog export --format json
+cts manage inspect mount github-list-issues --format json
 ```
 
 Catalog 应至少包含：
@@ -236,9 +236,9 @@ mounts:
 
 如果支持：
 
-- `cts serve mcp`
-- `cts serve http`
-- `cts serve jsonrpc`
+- `cts manage serve mcp`
+- `cts manage serve http`
+- `cts manage serve jsonrpc`
 
 那 `cts` 就能成为统一能力网关：
 

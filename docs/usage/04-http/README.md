@@ -57,7 +57,7 @@ mounts:
 可以先这样建一个 source：
 
 ```bash
-cts --config cts.yaml source add http jira \
+cts --config cts.yaml manage source add http jira \
   --base-url https://jira.example.com
 ```
 

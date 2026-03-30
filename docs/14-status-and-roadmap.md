@@ -29,42 +29,42 @@
 - 支持顶层 `mounts`、`aliases` 的追加合并
 - 支持字典深度合并
 - 支持 `source`、`mount`、`profile`、`auth_profile`、`plugin`、`hook` 的来源文件标注
-- 支持 `cts config paths`
-- 支持 `cts config build`
+- 支持 `cts manage config paths`
+- 支持 `cts manage config build`
 - 已支持 `plugins` / `hooks` 顶层配置模型
 
 ### 2.2 统一运行时
 
 - 已形成 `source -> operation -> mount -> dynamic command` 的基本编译链
 - 支持 `mount.id` 稳定入口
-- 支持 `cts source add`
-- 支持 `cts source show|test|remove`
-- 支持 `cts mount add`
-- 支持 `cts mount show|remove|import`
-- 支持 `cts alias list|add|remove`
-- 支持 `cts invoke <mount-id>`
-- 支持 `cts explain <mount-id>`
-- 支持 `cts inspect mount|source|operation`
-- 支持 `cts inspect drift`
-- 支持 `cts catalog export`
-- 支持 `cts sync`
-- 支持 `cts reconcile drift`
-- 支持 `cts doctor`
-- 支持 `cts docs`
-- 支持 `cts workflow list|execute`
+- 支持 `cts manage source add`
+- 支持 `cts manage source show|test|remove`
+- 支持 `cts manage mount add`
+- 支持 `cts manage mount show|remove|import`
+- 支持 `cts manage alias list|add|remove`
+- 支持 `cts manage invoke <mount-id>`
+- 支持 `cts manage explain <mount-id>`
+- 支持 `cts manage inspect mount|source|operation`
+- 支持 `cts manage inspect drift`
+- 支持 `cts manage catalog export`
+- 支持 `cts manage sync`
+- 支持 `cts manage reconcile drift`
+- 支持 `cts manage doctor`
+- 支持 `cts manage docs`
+- 支持 `cts manage workflow list|execute`
 - 支持动态命令生成
 - 支持动态命令 `--help`
-- 支持 `cts completion script --shell <bash|zsh|fish>`
+- 支持 `cts manage completion script --shell <bash|zsh|fish>`
 - 支持基于 JSON Schema 子集的参数校验
 - 支持基础结构化错误输出
 - 已支持 source discovery snapshot 持久化
 - 已支持 discovery 失败时使用 memory/cache fallback 继续编译
 - 已支持统一 schema provenance 缓存，并在 `help` / `inspect` / `sync` 之间复用
-- 已支持 `cts sync` 写入 import report 与 capability snapshot
+- 已支持 `cts manage sync` 写入 import report 与 capability snapshot
 - 已支持独立 `secret` 基础层与统一 secret manager
 - 已支持 `env` / `file` / `literal` secret provider
-- 已支持 `cts secret list|show`
-- 已支持 auth session store 与 `cts auth list|status|login|refresh|logout|validate`
+- 已支持 `cts manage secret list|show`
+- 已支持 auth session store 与 `cts manage auth list|status|login|refresh|logout|validate`
 - 已支持 HTTP `/api/secrets` / `/api/secrets/{name}`
 
 ### 2.3 Plugin / Hook 扩展基础
@@ -73,7 +73,7 @@
 - 支持 `module` / `path` 两种插件定位方式
 - plugin 可注册新的 provider type
 - source 可直接使用 plugin 注册的 `type`
-- `cts source add` 已可识别当前配置中 plugin 注册的 provider type
+- `cts manage source add` 已可识别当前配置中 plugin 注册的 provider type
 - 已支持配置驱动的 hook 绑定
 - 当前 hook 已接入：
   - `discovery.before|after|error`
@@ -326,7 +326,7 @@
 当前已经有：
 
 - auth session store
-- `cts auth list|status|login|refresh|logout|validate`
+- `cts manage auth list|status|login|refresh|logout|validate`
 - HTTP `/api/auth/profiles`
 - HTTP `POST /api/auth/login|refresh|logout`
 - source 与 auth profile 的基础凭证解析
@@ -360,9 +360,9 @@
 
 当前已经有：
 
-- `cts serve http`
-- `cts serve jsonrpc`
-- `cts serve mcp`
+- `cts manage serve http`
+- `cts manage serve jsonrpc`
+- `cts manage serve mcp`
 - 前端后端 API 已有一批只读接口：
   - `/api/app/summary`
   - `/api/sources`
@@ -390,7 +390,7 @@
   - `POST /api/sync/{source}`
 - `POST /api/extensions/hooks/explain`
 - `POST /api/extensions/hooks/simulate`
-- `cts ui` 已实现，可启动 HTTP API 并托管内置 UI
+- `cts manage ui` 已实现，可启动 HTTP API 并托管内置 UI
 
 结论：
 
@@ -412,8 +412,8 @@
 - Dashboard 的 reload / sync 按钮
 - Sources / Mounts / Aliases / Auth 已有第一批轻交互管理入口
 - `npm run build` 可通过
-- `cts serve http --ui` 可托管构建产物
-- `cts serve http --ui --open` 可直接打开浏览器
+- `cts manage serve http --ui` 可托管构建产物
+- `cts manage serve http --ui --open` 可直接打开浏览器
 
 当前还没有：
 
@@ -477,9 +477,9 @@
 
 本阶段应完成：
 
-- `cts config lint`
-- `cts source show|test`
-- `cts mount show`
+- `cts manage config lint`
+- `cts manage source show|test`
+- `cts manage mount show`
 - `inspect` 中补 origin file、generated 来源、surface 暴露信息
 - 稳定错误码与 exit code 映射
 - 帮助输出补 provider notes、风险、示例、机器入口信息
@@ -579,7 +579,7 @@
 
 本阶段应完成：
 
-- `cts serve http`
+- `cts manage serve http`
 - 只读 API：`/api/app/summary`、`/api/sources`、`/api/mounts`、`/api/catalog`
 - 详情 API：`/api/mounts/{id}`、`/api/mounts/{id}/help`
 - `reload` / `sync` 动作 API
@@ -613,7 +613,7 @@
 - plugin packaging / versioning / capability declaration
 - docs generator
 - shell completion
-- `cts ui`
+- `cts manage ui`
 - 前端 auth / drift / logs 治理页面
 
 可后置的高级能力：

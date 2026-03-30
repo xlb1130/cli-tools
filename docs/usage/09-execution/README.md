@@ -27,7 +27,7 @@ cts --config cts.yaml demo echo --text hello --upper --output json
 示例：
 
 ```bash
-cts --config cts.yaml invoke demo-echo \
+cts --config cts.yaml manage invoke demo-echo \
   --input-json '{"text":"hello","upper":true}' \
   --format json
 ```
@@ -43,7 +43,7 @@ cts --config cts.yaml invoke demo-echo \
 示例：
 
 ```bash
-cts --config cts.yaml explain demo-echo \
+cts --config cts.yaml manage explain demo-echo \
   --input-json '{"text":"hello","upper":true}' \
   --format json
 ```
@@ -61,8 +61,8 @@ cts --config cts.yaml explain demo-echo \
 示例：
 
 ```bash
-cts --config cts.yaml invoke demo-echo --input-json '{"text":"hello"}' --dry-run --format json
-cts --config cts.yaml explain demo-echo --input-json '{"text":"hello"}' --format json
+cts --config cts.yaml manage invoke demo-echo --input-json '{"text":"hello"}' --dry-run --format json
+cts --config cts.yaml manage explain demo-echo --input-json '{"text":"hello"}' --format json
 ```
 
 ## 配合 inspect 和运行信息一起看
@@ -70,10 +70,10 @@ cts --config cts.yaml explain demo-echo --input-json '{"text":"hello"}' --format
 和执行常一起搭配的命令有：
 
 ```bash
-cts --config cts.yaml inspect source demo_cli --format json
-cts --config cts.yaml inspect mount demo-echo --format json
-cts --config cts.yaml runs list --format json
-cts --config cts.yaml doctor --format json
+cts --config cts.yaml manage inspect source demo_cli --format json
+cts --config cts.yaml manage inspect mount demo-echo --format json
+cts --config cts.yaml manage runs list --format json
+cts --config cts.yaml manage doctor --format json
 ```
 
 ## 对外以 northbound surface 形式提供
@@ -83,9 +83,9 @@ cts --config cts.yaml doctor --format json
 例如：
 
 ```bash
-cts --config cts.yaml serve http
-cts --config cts.yaml serve http --ui --open
-cts --config cts.yaml serve mcp
+cts --config cts.yaml manage serve http
+cts --config cts.yaml manage serve http --ui --open
+cts --config cts.yaml manage serve mcp
 ```
 
 适合场景：

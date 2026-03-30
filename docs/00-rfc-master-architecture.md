@@ -120,8 +120,8 @@
 
 - `mount.id`
 - `machine.stable_name`
-- `cts invoke <mount-id>`
-- `cts explain <mount-id>`
+- `cts manage invoke <mount-id>`
+- `cts manage explain <mount-id>`
 - capability card 的核心字段
 - `ErrorEnvelope.type/code`
 
@@ -215,7 +215,7 @@ flowchart LR
   B --> C["Operation Catalog"]
   C --> D["Mount Compiler"]
   D --> E["Dynamic CLI"]
-  D --> F["cts invoke / explain"]
+  D --> F["cts manage invoke / explain"]
   D --> G["HTTP / JSON-RPC"]
   D --> H["MCP Bridge"]
   D --> I["Web UI Backend"]
@@ -559,7 +559,7 @@ Execution 层 MUST 统一处理：
 
 ### 13.1 稳定机器入口
 
-`cts invoke <mount-id>` MUST 作为机器入口首选。
+`cts manage invoke <mount-id>` MUST 作为机器入口首选。
 
 原因：
 
@@ -569,7 +569,7 @@ Execution 层 MUST 统一处理：
 
 ### 13.2 Explain / Dry-run
 
-`cts explain <mount-id>` 和 `--dry-run` SHOULD 视为第一阶段一等能力。
+`cts manage explain <mount-id>` 和 `--dry-run` SHOULD 视为第一阶段一等能力。
 
 Explain 输出 SHOULD 至少包含：
 
@@ -738,7 +738,7 @@ Web UI SHOULD 只消费 `cts` 自己的 northbound HTTP API。
 
 - `mount.id`
 - `machine.stable_name`
-- `cts invoke` 语义
+- `cts manage invoke` 语义
 - `ErrorEnvelope.type/code`
 - capability card 核心字段
 
@@ -855,7 +855,7 @@ Web UI SHOULD 只消费 `cts` 自己的 northbound HTTP API。
 1. 可以通过配置接入至少一种 HTTP source、一种 CLI source、一个 MCP source。
 2. 每种 source 至少有一个 operation 被成功 mount。
 3. 动态挂载命令可以执行，且 `--help` 可用。
-4. `cts invoke <mount-id>` 和 `cts explain <mount-id>` 能稳定输出结构化 JSON。
+4. `cts manage invoke <mount-id>` 和 `cts manage explain <mount-id>` 能稳定输出结构化 JSON。
 5. 配置、discovery、执行、错误、日志使用统一模型。
 6. 前端页面通过 `cts` backend API 成功展示 source、mount、schema 与 auth 状态。
 7. 上游 schema 变化时，系统能检测并给出 drift 结果。

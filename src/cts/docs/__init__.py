@@ -326,7 +326,7 @@ class DocsGenerator:
             "#### Machine Contract",
             "",
             "```bash",
-            f"cts invoke {mount.mount_id} --input-json '{{...}}'",
+            f"cts manage invoke {mount.mount_id} --input-json '{{...}}'",
             "```",
             "",
         ])
@@ -396,9 +396,9 @@ class DocsGenerator:
             "Start northbound surface servers.",
             "",
             "```",
-            "cts serve http [--host HOST] [--port PORT] [--ui]",
-            "cts serve jsonrpc [--host HOST] [--port PORT]",
-            "cts serve mcp [--host HOST] [--port PORT]",
+            "cts manage serve http [--host HOST] [--port PORT] [--ui]",
+            "cts manage serve jsonrpc [--host HOST] [--port PORT]",
+            "cts manage serve mcp [--host HOST] [--port PORT]",
             "```",
             "",
         ])

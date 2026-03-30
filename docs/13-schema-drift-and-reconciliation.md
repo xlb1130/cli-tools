@@ -100,10 +100,10 @@
 
 当前 MVP 已落地：
 
-- `cts sync` 会在每个 source 上输出基础 drift 分类
-- `cts inspect drift [source]` 可读取最近一次 sync report 中的 drift 结果
+- `cts manage sync` 会在每个 source 上输出基础 drift 分类
+- `cts manage inspect drift [source]` 可读取最近一次 sync report 中的 drift 结果
 - breaking drift 已支持 mount 级治理决策
-- 已支持基础 `cts reconcile drift <source>`
+- 已支持基础 `cts manage reconcile drift <source>`
 - 当前已支持：
   - `initial`
   - `unchanged`
@@ -291,22 +291,22 @@ mounts:
 
 ## 10. 建议的命令
 
-- `cts sync`
-- `cts inspect drift`
-- `cts reconcile drift`
+- `cts manage sync`
+- `cts manage inspect drift`
+- `cts manage reconcile drift`
 
 按当前代码状态，更贴近现状的检查入口是：
 
-- `cts inspect operation <source> <operation>`
-- `cts inspect mount <mount-id>`
-- `cts doctor`
+- `cts manage inspect operation <source> <operation>`
+- `cts manage inspect mount <mount-id>`
+- `cts manage doctor`
 
 未来还可以加：
 
-- `cts sync --check-drift`
-- `cts inspect schema <mount-id>`
-- `cts doctor mounts`
-- `cts sync --accept-additive`
+- `cts manage sync --check-drift`
+- `cts manage inspect schema <mount-id>`
+- `cts manage doctor mounts`
+- `cts manage sync --accept-additive`
 
 ## 11. 日志与审计要求
 

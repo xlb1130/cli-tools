@@ -38,13 +38,13 @@ cts import mcp 12306 --server-config '{"type":"sse","url":"https://mcp.api-infer
 cts 12306 --help 
 
 # 看看当前挂载了什么
-cts mount list
+cts manage mount list
 
 # 用稳定 ID 调用
-cts invoke greet --input-json '{"args":["World"]}'
+cts manage invoke greet --input-json '{"args":["World"]}'
 
 # 预览执行计划
-cts explain greet
+cts manage explain greet
 ```
 
 ---
@@ -109,7 +109,7 @@ sources:
 
 ```bash
 # 批量导入 MCP tools
-cts --config cts.yaml mount import 12306_mcp --under 12306
+cts --config cts.yaml manage mount import 12306_mcp --under 12306
 
 # 执行导入的工具
 cts --config cts.yaml 12306 <tool-name> --param value
@@ -153,7 +153,7 @@ source -> operation -> mount -> surface
 
 ```bash
 # 启动 Web UI
-cts serve http --ui --open
+cts manage serve http --ui --open
 ```
 
 访问 `http://localhost:8000` 查看 sources、mounts、执行历史等。
@@ -233,13 +233,13 @@ cts greet World
 # Output: Hello, World!
 
 # See what's mounted
-cts mount list
+cts manage mount list
 
 # Invoke by stable ID
-cts invoke greet --input-json '{"args":["World"]}'
+cts manage invoke greet --input-json '{"args":["World"]}'
 
 # Preview execution plan
-cts explain greet
+cts manage explain greet
 ```
 
 ---
@@ -315,7 +315,7 @@ These only matter for complex scenarios—simple cases don't need them.
 
 ```bash
 # Start Web UI
-cts serve http --ui --open
+cts manage serve http --ui --open
 ```
 
 Visit `http://localhost:8000` to inspect sources, mounts, run history, etc.

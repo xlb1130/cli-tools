@@ -87,7 +87,7 @@
 - 渲染后的 `--help`
 - explain 示例
 - 人类命令调用示例
-- `cts invoke` 示例
+- `cts manage invoke` 示例
 - 是否能通过 MCP / HTTP 暴露
 
 ### 3.5 Catalog 页面

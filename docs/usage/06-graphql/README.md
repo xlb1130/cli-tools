@@ -35,8 +35,8 @@ mounts:
 ## 常见流程
 
 ```bash
-cts --config cts.yaml source test github_gql --discover --format json
-cts --config cts.yaml mount import github_gql --under gql
+cts --config cts.yaml manage source test github_gql --discover --format json
+cts --config cts.yaml manage mount import github_gql --under gql
 ```
 
 ## 导入时能得到什么

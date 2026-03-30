@@ -19,7 +19,7 @@ mount 主要回答：
 示例：
 
 ```bash
-cts --config cts.yaml mount add demo_cli echo_json \
+cts --config cts.yaml manage mount add demo_cli echo_json \
   --id demo-echo \
   --path "demo echo" \
   --summary "Echo structured JSON"
@@ -36,7 +36,7 @@ cts --config cts.yaml mount add demo_cli echo_json \
 示例：
 
 ```bash
-cts --config cts.yaml mount import my_mcp --under my
+cts --config cts.yaml manage mount import my_mcp --under my
 ```
 
 适合场景：

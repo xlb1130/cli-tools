@@ -225,22 +225,22 @@ cts/
 - HTTP provider
 - CLI provider
 - MCP provider 基于 `mcp-cli`
-- `cts inspect`
-- `cts sync`
-- `cts doctor`
+- `cts manage inspect`
+- `cts manage sync`
+- `cts manage doctor`
 
 此阶段重点不是支持很多协议，而是打通端到端闭环。
 
 ### Phase 1 最小命令集
 
-- `cts config build|paths`
-- `cts source add|list|show|test`
-- `cts mount add|list|show`
-- `cts invoke <mount-id>`
-- `cts explain <mount-id>`
-- `cts catalog export`
-- `cts sync [source]`
-- `cts inspect mount|source|operation`
+- `cts manage config build|paths`
+- `cts manage source add|list|show|test`
+- `cts manage mount add|list|show`
+- `cts manage invoke <mount-id>`
+- `cts manage explain <mount-id>`
+- `cts manage catalog export`
+- `cts manage sync [source]`
+- `cts manage inspect mount|source|operation`
 - 动态 mount 命令执行
 - 动态 mount `--help`
 
@@ -392,7 +392,7 @@ cts/
 
 ### Step 6：稳定机器入口
 
-先把 `cts invoke <mount-id>` 和 `cts explain <mount-id>` 做稳定，这对 AI 和自动化系统比动态路径更重要。
+先把 `cts manage invoke <mount-id>` 和 `cts manage explain <mount-id>` 做稳定，这对 AI 和自动化系统比动态路径更重要。
 
 ### Step 7：动态命令树
 
@@ -521,7 +521,7 @@ cts/
 
 应对：
 
-- 先支持 `cts invoke <mount-id>`
+- 先支持 `cts manage invoke <mount-id>`
 - 命令树成熟后再暴露完整动态路径
 
 ### 风险 2：CLI 自动发现不可靠

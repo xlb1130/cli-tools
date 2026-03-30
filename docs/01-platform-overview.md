@@ -156,7 +156,7 @@ Provider 关注“怎么接入和执行”。
 典型 surface：
 
 - 交互式 CLI 路径，例如 `cts dev github issues list`
-- 稳定机器入口，例如 `cts invoke github-list-issues`
+- 稳定机器入口，例如 `cts manage invoke github-list-issues`
 - 本地 HTTP/JSON-RPC 服务
 - 本地 MCP bridge
 - 本地 Web 控制台
@@ -245,33 +245,33 @@ Surface 关注“统一能力如何再次被消费”。
 
 长期建议至少包含：
 
-- `cts source add|list|show|test|remove`
-- `cts mount add|import|list|show|remove|sync`
-- `cts inspect source|operation|mount|schema`
-- `cts invoke <mount-id>`
-- `cts explain <mount-id>`
-- `cts catalog export`
-- `cts serve mcp|http|jsonrpc`
-- `cts ui`
-- `cts auth login|logout|status`
+- `cts manage source add|list|show|test|remove`
+- `cts manage mount add|import|list|show|remove|sync`
+- `cts manage inspect source|operation|mount|schema`
+- `cts manage invoke <mount-id>`
+- `cts manage explain <mount-id>`
+- `cts manage catalog export`
+- `cts manage serve mcp|http|jsonrpc`
+- `cts manage ui`
+- `cts manage auth login|logout|status`
 - `cts cache list|clear`
-- `cts doctor`
-- `cts sync`
+- `cts manage doctor`
+- `cts manage sync`
 
 按当前代码状态，已经落地的主路径包括：
 
-- `cts source add|list|show|test|remove`
-- `cts mount add|import|list|show|remove`
-- `cts inspect source|operation|mount|drift`
-- `cts invoke <mount-id>`
-- `cts explain <mount-id>`
-- `cts catalog export`
-- `cts serve mcp|http|jsonrpc`
-- `cts auth list|status|validate|login|refresh|logout`
-- `cts doctor`
-- `cts sync`
+- `cts manage source add|list|show|test|remove`
+- `cts manage mount add|import|list|show|remove`
+- `cts manage inspect source|operation|mount|drift`
+- `cts manage invoke <mount-id>`
+- `cts manage explain <mount-id>`
+- `cts manage catalog export`
+- `cts manage serve mcp|http|jsonrpc`
+- `cts manage auth list|status|validate|login|refresh|logout`
+- `cts manage doctor`
+- `cts manage sync`
 
-其中 `cts ui`、`cts cache list|clear`、`cts inspect schema`、`cts mount sync` 仍属于文档中的目标态命令。
+其中 `cts manage ui`、`cts cache list|clear`、`cts manage inspect schema`、`cts manage mount sync` 仍属于文档中的目标态命令。
 
 ### 6.2 动态挂载命令
 
@@ -299,8 +299,8 @@ cts cloud kubernetes pods list --namespace prod
 动态命令路径适合人类记忆和团队约定，但机器调用不应依赖可变路径。推荐把 `mount.id` 作为稳定合同，对 AI 和自动化系统暴露：
 
 ```bash
-cts invoke github-list-issues --input-json '{"repo":"owner/repo"}' --output json
-cts explain github-list-issues --input-json '{"repo":"owner/repo"}'
+cts manage invoke github-list-issues --input-json '{"repo":"owner/repo"}' --output json
+cts manage explain github-list-issues --input-json '{"repo":"owner/repo"}'
 ```
 
 ## 7. 为什么必须把 CLI 纳入统一模型
@@ -331,32 +331,32 @@ cts explain github-list-issues --input-json '{"repo":"owner/repo"}'
 ### 8.1 把 MCP 工具挂到 cts 命令树
 
 ```bash
-cts source add mcp github --config ~/.config/claude_desktop_config.json --server github
-cts mount add github list_issues --path "dev github issues list"
+cts manage source add mcp github --config ~/.config/claude_desktop_config.json --server github
+cts manage mount add github list_issues --path "dev github issues list"
 cts dev github issues list --repo owner/repo
 ```
 
 ### 8.2 把一个 REST API 挂到 cts
 
 ```bash
-cts source add http jira --base-url https://jira.example.com/rest/api/3
-cts mount add jira get_issue --path "ops jira issue get"
+cts manage source add http jira --base-url https://jira.example.com/rest/api/3
+cts manage mount add jira get_issue --path "ops jira issue get"
 cts ops jira issue get --key ABC-123
 ```
 
 ### 8.3 把成熟 CLI 包成统一命令
 
 ```bash
-cts source add cli gh --bin gh
-cts mount import gh --manifest ./gh-commands.yaml --under dev gh
+cts manage source add cli gh --bin gh
+cts manage mount import gh --manifest ./gh-commands.yaml --under dev gh
 cts dev gh repo list --owner my-org
 ```
 
 ### 8.4 把脚本目录接进来
 
 ```bash
-cts source add shell scripts --root ./scripts
-cts mount add scripts backup_db --path "ops db backup"
+cts manage source add shell scripts --root ./scripts
+cts manage mount add scripts backup_db --path "ops db backup"
 cts ops db backup --target prod
 ```
 

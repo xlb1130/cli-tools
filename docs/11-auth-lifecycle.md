@@ -167,7 +167,7 @@ plugin 应能声明：
 
 来源可能是：
 
-- `cts auth login jira-dev`
+- `cts manage auth login jira-dev`
 - 首次执行时按需触发
 - provider 自动引导
 
@@ -248,13 +248,13 @@ Provider 建议支持这些能力：
 
 ## 9. 建议的命令
 
-- `cts auth list`
-- `cts auth status [name]`
-- `cts auth validate [name]`
-- `cts auth login <name>`
-- `cts auth refresh <name>`
-- `cts auth logout <name>`
-- `cts doctor --auth`
+- `cts manage auth list`
+- `cts manage auth status [name]`
+- `cts manage auth validate [name]`
+- `cts manage auth login <name>`
+- `cts manage auth refresh <name>`
+- `cts manage auth logout <name>`
+- `cts manage doctor --auth`
 
 这些命令还能为前端提供相同 backend 能力。
 
@@ -265,7 +265,7 @@ Provider 建议支持这些能力：
 - 不把 access token 明文写进共享项目配置
 - refresh token 优先走 keyring
 - 日志与错误对象里默认脱敏
-- `cts explain` 不输出真实凭证
+- `cts manage explain` 不输出真实凭证
 
 建议区分：
 
@@ -314,7 +314,7 @@ Provider 建议支持这些能力：
 
 AI 或脚本最需要的是“知道能不能调”，而不是拿到 token 本身。
 
-因此建议 `cts explain`、catalog、前端 API 中暴露：
+因此建议 `cts manage explain`、catalog、前端 API 中暴露：
 
 - 是否需要 auth
 - 当前 auth 是否就绪

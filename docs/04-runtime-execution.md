@@ -45,7 +45,7 @@
 - `policy_blocked`
 - `surface_request_start` / `surface_request_complete`
 
-这样无论是 CLI、前端页面还是 `cts serve mcp/http/jsonrpc`，都能把完整链路串起来。
+这样无论是 CLI、前端页面还是 `cts manage serve mcp/http/jsonrpc`，都能把完整链路串起来。
 
 ## 2.2 Hook 生命周期
 
@@ -114,7 +114,7 @@
 也建议支持：
 
 ```bash
-cts invoke <mount-id> --help
+cts manage invoke <mount-id> --help
 ```
 
 这样同一条能力既有人类路径帮助，也有稳定机器入口帮助。
@@ -134,7 +134,7 @@ cts invoke <mount-id> --help
 - `stable_name`
 - 可见 surfaces
 - 人类路径示例
-- `cts invoke` 示例
+- `cts manage invoke` 示例
 
 ### 3.2.1 帮助内容的动态来源
 
@@ -159,8 +159,8 @@ cts invoke <mount-id> --help
 建议把下面两条命令视为架构一等公民，而不是兜底命令：
 
 ```bash
-cts invoke <mount-id> --input-json '{...}' --output json
-cts explain <mount-id> --input-json '{...}'
+cts manage invoke <mount-id> --input-json '{...}' --output json
+cts manage explain <mount-id> --input-json '{...}'
 ```
 
 原因：
@@ -199,7 +199,7 @@ cts ops jira issue get --key ABC-123
 对某些 CLI/source，要支持：
 
 ```bash
-cts invoke <mount-id> --raw-args '...'
+cts manage invoke <mount-id> --raw-args '...'
 ```
 
 但不建议作为主路径，只用于兜底。
@@ -303,9 +303,9 @@ CLI Provider 需要支持：
 ### 6.3 同步命令
 
 ```bash
-cts sync
-cts sync github_mcp
-cts inspect source github_mcp --refresh
+cts manage sync
+cts manage sync github_mcp
+cts manage inspect source github_mcp --refresh
 ```
 
 ### 6.4 缓存策略
@@ -321,7 +321,7 @@ cts inspect source github_mcp --refresh
 运行时应支持导出完整能力目录，供 AI、IDE、自动化系统消费：
 
 ```bash
-cts catalog export --format json
+cts manage catalog export --format json
 ```
 
 Catalog 至少应包含：
@@ -451,7 +451,7 @@ Catalog 还建议包含一份结构化 help 摘要，供前端或文档生成器
 ```bash
 cts ... --debug
 cts ... --trace
-cts inspect mount <id> --render-request
+cts manage inspect mount <id> --render-request
 ```
 
 这样在接 HTTP、CLI、MCP 时都能快速定位问题。
@@ -467,16 +467,16 @@ cts logs config
 当前仓库已提供的相近入口是：
 
 ```bash
-cts runs list
-cts runs show <run-id>
-cts doctor
-cts inspect drift [source]
+cts manage runs list
+cts manage runs show <run-id>
+cts manage doctor
+cts manage inspect drift [source]
 ```
 
 对 AI/自动化系统还建议提供：
 
 ```bash
-cts explain <mount-id> --input-json '{...}' --format json
+cts manage explain <mount-id> --input-json '{...}' --format json
 ```
 
 ## 9. 错误模型
@@ -603,7 +603,7 @@ cts dev gh repo list --owner my-org --limit 50
 ### 12.4 稳定机器调用
 
 ```bash
-cts invoke github-list-issues --input-json '{"repo":"owner/repo"}' --output json
+cts manage invoke github-list-issues --input-json '{"repo":"owner/repo"}' --output json
 ```
 
 运行时执行：
