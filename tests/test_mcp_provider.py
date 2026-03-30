@@ -4,6 +4,10 @@ from cts.app import build_app
 from cts.providers import mcp_cli
 
 
+def test_mcp_bridge_script_path_exists():
+    assert mcp_cli._bridge_script_path().exists()
+
+
 def test_mcp_live_discovery_compiles_generated_mounts(tmp_path: Path, monkeypatch):
     config_path = tmp_path / "cts.yaml"
     config_path.write_text(

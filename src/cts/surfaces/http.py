@@ -177,33 +177,62 @@ class CTSHTTPRequestHandler(BaseHTTPRequestHandler):
             return build_secret_detail(app, name)
 
         if path == "/api/extensions/summary":
-            return build_extensions_summary(app)
+            try:
+                return build_extensions_summary(app)
+            except Exception as exc:
+                return {
+                    "plugin_count": 0,
+                    "provider_count": 0,
+                    "plugin_provider_count": 0,
+                    "core_provider_count": 0,
+                    "hook_count": 0,
+                    "enabled_hook_count": 0,
+                    "provider_conflict_count": 0,
+                    "hooks_by_event": [],
+                    "recent_event_count": 0,
+                    "error": str(exc),
+                }
 
         if path == "/api/extensions/plugins":
-            return build_plugin_inventory(app)
+            try:
+                return build_plugin_inventory(app)
+            except Exception as exc:
+                return {"items": [], "provider_conflicts": [], "error": str(exc)}
 
         if path == "/api/extensions/providers":
-            return build_provider_inventory(app)
+            try:
+                return build_provider_inventory(app)
+            except Exception:
+                return {"items": []}
 
         if path == "/api/extensions/hooks":
-            return build_hook_inventory(app, event=_first(query, "event"), plugin=_first(query, "plugin"))
+            try:
+                return build_hook_inventory(app, event=_first(query, "event"), plugin=_first(query, "plugin"))
+            except Exception:
+                return {"items": []}
 
         if path == "/api/extensions/contracts":
-            return build_hook_contracts()
+            try:
+                return build_hook_contracts()
+            except Exception:
+                return {"version": 1, "items": []}
 
         if path == "/api/extensions/events":
             limit = int(_first(query, "limit") or 50)
-            return build_extension_events(
-                app,
-                limit=limit,
-                event=_first(query, "event"),
-                plugin=_first(query, "plugin"),
-                hook_event=_first(query, "hook_event"),
-                level=_first(query, "level"),
-                mount_id=_first(query, "mount_id"),
-                source=_first(query, "source"),
-                before_ts=_first(query, "before_ts"),
-            )
+            try:
+                return build_extension_events(
+                    app,
+                    limit=limit,
+                    event=_first(query, "event"),
+                    plugin=_first(query, "plugin"),
+                    hook_event=_first(query, "hook_event"),
+                    level=_first(query, "level"),
+                    mount_id=_first(query, "mount_id"),
+                    source=_first(query, "source"),
+                    before_ts=_first(query, "before_ts"),
+                )
+            except Exception:
+                return {"items": [], "filters": {}, "next_before_ts": None}
 
         if path == "/api/sources":
             return {
@@ -270,15 +299,21 @@ class CTSHTTPRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/drift":
             report = app.get_latest_drift_report()
             if report is None:
-                raise KeyError("drift report not found")
+                return {"items": [], "drift_summary": {"status": "no_report", "severity": "unknown"}, "source_drift_state": None}
             return report
 
         if path.startswith("/api/drift/"):
             source_name = path.split("/", 3)[3]
             report = app.get_latest_drift_report(source_name)
+            source_state = app.get_source_drift_state(source_name)
             if report is None or not report.get("items"):
-                raise KeyError(f"drift report not found for source: {source_name}")
-            report["source_drift_state"] = app.get_source_drift_state(source_name)
+                return {
+                    "items": [],
+                    "source": source_name,
+                    "drift_summary": {"status": "no_report", "severity": "unknown"},
+                    "source_drift_state": source_state,
+                }
+            report["source_drift_state"] = source_state
             return report
 
         if path == "/api/runs":

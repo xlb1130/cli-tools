@@ -6,6 +6,16 @@ import yaml
 from click.testing import CliRunner
 
 from cts.cli.root import main
+from cts.providers import mcp_cli
+
+
+def _load_trailing_json(output: str) -> dict:
+    start = output.rfind("\n{")
+    if start == -1:
+        start = output.find("{")
+    else:
+        start += 1
+    return json.loads(output[start:])
 
 
 def test_source_add_creates_default_root_config():
@@ -104,6 +114,102 @@ def test_mount_add_and_alias_add_enable_dynamic_command():
         assert mount_show.exit_code == 0
         mount_show_payload = json.loads(mount_show.output)
         assert ["issue", "get"] in mount_show_payload["aliases"]
+
+
+def test_import_mcp_apply_persists_source_and_mounts(tmp_path: Path, monkeypatch):
+    config_path = tmp_path / "cts.yaml"
+
+    def fake_bridge(source_config, app, command, primitive_type=None, target=None, args=None, timeout_seconds=None):
+        assert command == "list-primitives"
+        return {
+            "ok": True,
+            "server": "demo-server",
+            "transport_type": "sse",
+            "primitives": [
+                {
+                    "primitive_type": "tool",
+                    "name": "query_train",
+                    "description": "Query train tickets",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"from": {"type": "string"}},
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(mcp_cli, "_run_bridge_command", fake_bridge)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "mcp",
+            "cn12306",
+            "--server-config",
+            '{"type":"sse","url":"https://example.com/sse"}',
+            "--apply",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["tools_count"] == 1
+    assert payload["mounts_created"] == 1
+
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert raw["sources"]["cn12306"]["type"] == "mcp"
+    assert raw["sources"]["cn12306"]["config_file"] == str(config_path.parent / "servers.json")
+    assert raw["mounts"][0]["id"] == "cn12306-query_train"
+    assert raw["mounts"][0]["command"]["path"] == ["cn12306", "query_train"]
+
+
+def test_import_mcp_default_servers_file_uses_default_config_dir(monkeypatch):
+    def fake_bridge(source_config, app, command, primitive_type=None, target=None, args=None, timeout_seconds=None):
+        assert command == "list-primitives"
+        return {
+            "ok": True,
+            "server": "demo-server",
+            "transport_type": "sse",
+            "primitives": [],
+        }
+
+    monkeypatch.setattr(mcp_cli, "_run_bridge_command", fake_bridge)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        home_dir = Path.cwd() / "home"
+        home_dir.mkdir()
+
+        result = runner.invoke(
+            main,
+            [
+                "import",
+                "mcp",
+                "cn12306",
+                "--server-config",
+                '{"type":"sse","url":"https://example.com/sse"}',
+                "--apply",
+                "--format",
+                "json",
+            ],
+            env={"HOME": str(home_dir)},
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        config_path = home_dir / ".cts" / "config.yaml"
+        servers_path = home_dir / ".cts" / "servers.json"
+
+        assert payload["file"] == str(config_path)
+        assert payload["servers_file"] == str(servers_path)
+        assert config_path.exists()
+        assert servers_path.exists()
 
 
 def test_source_add_and_mount_add_can_target_loaded_split_files():
@@ -619,10 +725,74 @@ def test_import_wizard_preview_guides_cli_import_flow():
         )
 
         assert result.exit_code == 0
-        payload = json.loads(result.output.splitlines()[-1])
+        payload = _load_trailing_json(result.output)
         assert payload["action"] == "import_cli_preview"
         assert payload["source"]["name"] == "demo_cli"
         assert payload["operation_id"] == "greet"
+
+
+def test_import_wizard_preview_guides_mcp_import_flow():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        config_path = Path("cts.yaml")
+        config_path.write_text("version: 1\n", encoding="utf-8")
+
+        result = runner.invoke(
+            main,
+            ["--config", str(config_path), "import", "wizard", "--format", "json"],
+            input='mcp\ncn12306\n{"type":"sse","url":"https://example.com/sse"}\n\n\ntravel rail\nn\n',
+        )
+
+        assert result.exit_code == 0
+        payload = _load_trailing_json(result.output)
+        assert payload["action"] == "import_mcp_preview"
+        assert payload["source_name"] == "cn12306"
+        assert payload["under"] == ["travel", "rail"]
+
+
+def test_import_wizard_apply_supports_mcp(monkeypatch):
+    def fake_bridge(source_config, app, command, primitive_type=None, target=None, args=None, timeout_seconds=None):
+        assert command == "list-primitives"
+        return {
+            "ok": True,
+            "server": "demo-server",
+            "transport_type": "sse",
+            "primitives": [
+                {
+                    "primitive_type": "tool",
+                    "name": "query_train",
+                    "description": "Query train tickets",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"from": {"type": "string"}},
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(mcp_cli, "_run_bridge_command", fake_bridge)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        config_path = Path("cts.yaml")
+        config_path.write_text("version: 1\n", encoding="utf-8")
+
+        result = runner.invoke(
+            main,
+            ["--config", str(config_path), "import", "wizard", "--apply", "--format", "json"],
+            input='mcp\ncn12306\n{"type":"sse","url":"https://example.com/sse"}\n\n\ntravel rail\n',
+        )
+
+        assert result.exit_code == 0
+        payload = _load_trailing_json(result.output)
+        assert payload["action"] == "import_mcp_apply"
+        assert payload["tools_count"] == 1
+        assert payload["mounts_created"] == 1
+
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert raw["sources"]["cn12306"]["type"] == "mcp"
+        assert raw["mounts"][0]["id"] == "cn12306-query_train"
+        assert raw["mounts"][0]["command"]["path"] == ["travel", "rail", "query_train"]
 
 
 def test_completion_install_zsh():

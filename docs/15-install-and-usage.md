@@ -265,7 +265,40 @@ cts --config cts.yaml config lint --format json
 cts --config cts.yaml config lint --compile --format json
 ```
 
-### 5.3 source 管理
+### 5.3 最短导入路径
+
+如果你已经有一个本地 CLI，推荐优先使用新的统一导入命令，而不是先分别执行 `source add` 和 `mount add`。
+
+预览将要写入的 source 和 mount：
+
+```bash
+cts --config cts.yaml import cli demo_cli python3 ./demo_cli.py greet \
+  --from help \
+  --format json
+```
+
+直接写入配置并自动挂载：
+
+```bash
+cts --config cts.yaml import cli demo_cli python3 ./demo_cli.py greet \
+  --from help \
+  --apply
+```
+
+如果你更喜欢交互式方式：
+
+```bash
+cts --config cts.yaml import wizard
+```
+
+说明：
+
+- 默认不会要求你先准备单独的 manifest 文件
+- 默认会把 operation 写入 `source.operations`
+- 默认会自动创建 mount，并生成类似 `<source> <operation>` 的命令路径
+- 如果需要单独导出 manifest，可以追加 `--save-manifest ./demo-manifest.yaml`
+
+### 5.4 source 管理
 
 ```bash
 cts --config cts.yaml source add http jira \
@@ -280,7 +313,13 @@ cts --config cts.yaml source test jira --format json
 cts --config cts.yaml source remove jira --format json
 ```
 
-### 5.4 mount 管理
+这组命令更适合：
+
+- 手工维护 source
+- 需要精细控制 provider 参数
+- 批量治理已有配置
+
+### 5.5 mount 管理
 
 ```bash
 cts --config cts.yaml mount add jira get_issue \
@@ -298,7 +337,12 @@ cts --config cts.yaml mount show jira-get-issue --format json
 cts --config cts.yaml mount remove jira-get-issue --format json
 ```
 
-### 5.5 调用 mount
+这组命令更适合：
+
+- 已经有现成 source 和 operation
+- 想显式指定 mount ID、命令路径、参数覆盖和暴露策略
+
+### 5.6 调用 mount
 
 动态命令调用：
 

@@ -1242,6 +1242,14 @@ def import_cli_command(
             click.echo(render_payload(payload, output_format))
             return
 
+        if plan.get("manifest_write"):
+            manifest_write = dict(plan["manifest_write"])
+            merge_operation_into_manifest(
+                Path(manifest_write["resolved_path"]),
+                dict(manifest_write["operation"]),
+                executable=manifest_write.get("executable"),
+            )
+
         baseline_conflicts = conflict_signatures(app.catalog.conflicts)
 
         def mutator(payload: Dict[str, Any]) -> None:
@@ -1254,14 +1262,6 @@ def import_cli_command(
             profile=state.profile,
             baseline_conflicts=baseline_conflicts,
         )
-
-        if plan.get("manifest_write"):
-            manifest_write = dict(plan["manifest_write"])
-            merge_operation_into_manifest(
-                Path(manifest_write["resolved_path"]),
-                dict(manifest_write["operation"]),
-                executable=manifest_write.get("executable"),
-            )
 
         compiled_mount = None
         if compiled_app and plan.get("mount"):
@@ -1283,15 +1283,76 @@ def import_cli_command(
         _fail(ctx, exc, "import_cli", output_format)
 
 
+@import_group.command("mcp")
+@click.argument("source_name")
+@click.option("--server-config", type=str, help="MCP server configuration as JSON string.")
+@click.option("--server-name", type=str, help="Server name in the servers.json file.")
+@click.option("--config-file", type=click.Path(path_type=Path), default=None, help="Path to servers.json. Defaults to ./servers.json.")
+@click.option("--under", "under_values", multiple=True, help="Command path prefix for all imported mounts.")
+@click.option("--apply", is_flag=True, help="Apply the MCP source and import all tools as mounts.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
+@click.pass_context
+def import_mcp_command(
+    ctx: click.Context,
+    source_name: str,
+    server_config: Optional[str],
+    server_name: Optional[str],
+    config_file: Optional[Path],
+    under_values: tuple[str, ...],
+    apply: bool,
+    output_format: str,
+) -> None:
+    """Import an MCP server and batch import its tools.
+    
+    This command creates an MCP source configuration and imports all
+    discovered tools as mounts in one step.
+    
+    Examples:
+        cts import mcp my-mcp --server-config '{"type":"sse","url":"https://..."}' --apply
+        cts import mcp my-mcp --server-name my-server --config-file ./servers.json --apply
+    """
+    try:
+        payload = _execute_import_mcp(
+            ctx,
+            source_name=source_name,
+            server_config=server_config,
+            server_name=server_name,
+            config_file=config_file,
+            under_values=under_values,
+            apply=apply,
+        )
+        click.echo(render_payload(payload, output_format))
+    except Exception as exc:
+        _fail(ctx, exc, "import_mcp", output_format)
+
+
 @import_group.command("wizard")
 @click.option("--apply", is_flag=True, help="Write the imported source operation and mount into config after the wizard.")
 @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
 @click.pass_context
 def import_wizard(ctx: click.Context, apply: bool, output_format: str) -> None:
     """Interactive wizard for simplified imports."""
-    import_type = click.prompt("Import type", type=click.Choice(["cli"]), default="cli", show_choices=False)
-    if import_type != "cli":
-        raise click.ClickException(f"unsupported import type: {import_type}")
+    import_type = click.prompt("Import type", type=click.Choice(["cli", "mcp"]), default="cli", show_choices=False)
+
+    if import_type == "mcp":
+        source_name = click.prompt("Source name")
+        server_config = click.prompt("Server config JSON (optional)", default="", show_default=False).strip() or None
+        server_name = click.prompt("Server name (optional)", default="", show_default=False).strip() or None
+        config_file_raw = click.prompt("servers.json path (optional)", default="", show_default=False).strip()
+        under_raw = click.prompt("Command prefix (optional)", default="", show_default=False).strip()
+        should_apply = apply or click.confirm("Apply changes now?", default=False)
+
+        payload = _execute_import_mcp(
+            ctx,
+            source_name=source_name,
+            server_config=server_config,
+            server_name=server_name,
+            config_file=Path(config_file_raw) if config_file_raw else None,
+            under_values=tuple(shlex.split(under_raw)) if under_raw else (),
+            apply=should_apply,
+        )
+        click.echo(render_payload(payload, output_format))
+        return
 
     source_name = click.prompt("Source name")
     command_text = click.prompt("Command argv", prompt_suffix=": ")
@@ -1400,6 +1461,14 @@ def import_wizard(ctx: click.Context, apply: bool, output_format: str) -> None:
         click.echo(render_payload({"ok": True, "action": "import_cli_preview", **plan}, output_format))
         return
 
+    if plan.get("manifest_write"):
+        manifest_write = dict(plan["manifest_write"])
+        merge_operation_into_manifest(
+            Path(manifest_write["resolved_path"]),
+            dict(manifest_write["operation"]),
+            executable=manifest_write.get("executable"),
+        )
+
     baseline_conflicts = conflict_signatures(app.catalog.conflicts)
 
     def mutator(payload: Dict[str, Any]) -> None:
@@ -1412,13 +1481,6 @@ def import_wizard(ctx: click.Context, apply: bool, output_format: str) -> None:
         profile=state.profile,
         baseline_conflicts=baseline_conflicts,
     )
-    if plan.get("manifest_write"):
-        manifest_write = dict(plan["manifest_write"])
-        merge_operation_into_manifest(
-            Path(manifest_write["resolved_path"]),
-            dict(manifest_write["operation"]),
-            executable=manifest_write.get("executable"),
-        )
     compiled_mount = None
     if compiled_app and plan.get("mount"):
         compiled_mount = compiled_app.catalog.find_by_id(plan["mount"]["id"])
@@ -1438,6 +1500,156 @@ def import_wizard(ctx: click.Context, apply: bool, output_format: str) -> None:
             output_format,
         )
     )
+
+
+def _execute_import_mcp(
+    ctx: click.Context,
+    *,
+    source_name: str,
+    server_config: Optional[str],
+    server_name: Optional[str],
+    config_file: Optional[Path],
+    under_values: tuple[str, ...],
+    apply: bool,
+) -> Dict[str, Any]:
+    import json
+
+    state = _get_state(ctx)
+    session = prepare_edit_session(state.config_path, target_file=None)
+
+    if config_file is None:
+        config_file = session.target_path.parent / "servers.json"
+
+    if server_config:
+        try:
+            server_cfg = json.loads(server_config)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSON in --server-config: {exc}")
+    elif server_name:
+        server_cfg = None
+    else:
+        raise ValueError("Either --server-config or --server-name must be provided")
+
+    servers_json_path = Path(config_file)
+    servers_data: Dict[str, Any] = {}
+
+    if servers_json_path.exists():
+        with open(servers_json_path) as f:
+            servers_data = json.load(f)
+
+    if server_config:
+        actual_server_name = server_name or f"{source_name}-server"
+        servers_data["mcpServers"] = servers_data.get("mcpServers", {})
+        servers_data["mcpServers"][actual_server_name] = server_cfg
+    else:
+        actual_server_name = server_name
+
+    plan = {
+        "source_name": source_name,
+        "server_name": actual_server_name,
+        "config_file": str(servers_json_path),
+        "servers_data": servers_data,
+        "under": list(under_values),
+    }
+
+    if not apply:
+        return {
+            "ok": True,
+            "action": "import_mcp_preview",
+            **plan,
+        }
+
+    servers_json_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(servers_json_path, "w") as f:
+        json.dump(servers_data, f, indent=2)
+
+    baseline_conflicts = set()
+
+    def mutator(payload: Dict[str, Any]) -> None:
+        if "sources" not in payload:
+            payload["sources"] = {}
+        payload["sources"][source_name] = {
+            "type": "mcp",
+            "adapter": "mcp-cli",
+            "config_file": str(servers_json_path),
+            "server": actual_server_name,
+            "discovery": {"mode": "live"},
+        }
+
+    updated, compiled_app = apply_update(
+        session,
+        mutator,
+        compile_runtime=True,
+        profile=state.profile,
+        baseline_conflicts=baseline_conflicts,
+    )
+
+    if compiled_app:
+        try:
+            compiled_app.sync(source_name)
+            operations = compiled_app.source_operations.get(source_name, {})
+
+            mounts_to_create = []
+            for op_id, op in operations.items():
+                mount_id = f"{source_name}-{op_id}"
+                mount_path = list(under_values) + [op_id] if under_values else [source_name, op_id]
+
+                mounts_to_create.append(
+                    {
+                        "id": mount_id,
+                        "source": source_name,
+                        "operation": op_id,
+                        "command": {"path": mount_path},
+                    }
+                )
+
+            mount_session = prepare_edit_session(state.config_path, target_file=session.target_path)
+
+            def mount_mutator(payload: Dict[str, Any]) -> None:
+                if "mounts" not in payload:
+                    payload["mounts"] = []
+                payload["mounts"].extend(mounts_to_create)
+
+            apply_update(
+                mount_session,
+                mount_mutator,
+                compile_runtime=True,
+                profile=state.profile,
+                baseline_conflicts=baseline_conflicts,
+            )
+
+            return {
+                "ok": True,
+                "action": "import_mcp_apply",
+                "file": str(session.target_path),
+                "created_file": session.created,
+                "servers_file": str(servers_json_path),
+                "warnings": list(session.warnings),
+                "source_config": updated.get("sources", {}).get(source_name, {}),
+                "tools_count": len(operations),
+                "mounts_created": len(mounts_to_create),
+            }
+        except Exception as exc:
+            return {
+                "ok": True,
+                "action": "import_mcp_apply",
+                "file": str(session.target_path),
+                "created_file": session.created,
+                "servers_file": str(servers_json_path),
+                "warnings": list(session.warnings),
+                "source_config": updated.get("sources", {}).get(source_name, {}),
+                "tools_import_error": str(exc),
+            }
+
+    return {
+        "ok": True,
+        "action": "import_mcp_apply",
+        "file": str(session.target_path),
+        "created_file": session.created,
+        "servers_file": str(servers_json_path),
+        "warnings": list(session.warnings),
+        "source_config": updated.get("sources", {}).get(source_name, {}),
+    }
 
 
 @main.group()

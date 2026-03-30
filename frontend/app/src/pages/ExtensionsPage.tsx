@@ -92,6 +92,33 @@ export function ExtensionsPage() {
   }, [contracts]);
   const activeContract = contractByEvent.get(labEvent) ?? contracts[0] ?? null;
 
+  // Hooks must be called before any early returns
+  useEffect(() => {
+    if (!beforeTs || eventsQuery.isFetching) {
+      return;
+    }
+    setEventItems((current) => {
+      const base = current.length ? current : [];
+      const merged = [...base, ...eventsResponse.items];
+      const seen = new Set<string>();
+      return merged.filter((item) => {
+        const key = `${item.ts}:${item.event}:${String(item.data?.index ?? "")}:${String(item.run_id ?? "")}`;
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      });
+    });
+    setBeforeTs(undefined);
+  }, [beforeTs, eventsQuery.isFetching, eventsResponse.items]);
+
+  useEffect(() => {
+    if (selectedHookEvent) {
+      setLabEvent(selectedHookEvent);
+    }
+  }, [selectedHookEvent]);
+
   if (loading) {
     return <LoadingState label="加载扩展调试视图" />;
   }
@@ -203,32 +230,6 @@ export function ExtensionsPage() {
     setSavedScenarios(nextItems);
     persistSavedHookScenarios(nextItems);
   };
-
-  useEffect(() => {
-    if (!beforeTs || eventsQuery.isFetching) {
-      return;
-    }
-    setEventItems((current) => {
-      const base = current.length ? current : [];
-      const merged = [...base, ...eventsResponse.items];
-      const seen = new Set<string>();
-      return merged.filter((item) => {
-        const key = `${item.ts}:${item.event}:${String(item.data?.index ?? "")}:${String(item.run_id ?? "")}`;
-        if (seen.has(key)) {
-          return false;
-        }
-        seen.add(key);
-        return true;
-      });
-    });
-    setBeforeTs(undefined);
-  }, [beforeTs, eventsQuery.isFetching, eventsResponse.items]);
-
-  useEffect(() => {
-    if (selectedHookEvent) {
-      setLabEvent(selectedHookEvent);
-    }
-  }, [selectedHookEvent]);
 
   return (
     <div className="page-stack">

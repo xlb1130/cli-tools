@@ -31,4 +31,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-cts = ["ui_dist/*", "ui_dist/**/*"]
+cts = ["ui_dist/*", "ui_dist/**/*", "scripts/*.mjs"]

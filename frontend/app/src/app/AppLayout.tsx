@@ -29,10 +29,20 @@ export function AppLayout() {
     <div className="shell">
       <aside className="shell-sidebar">
         <div className="brand-block">
-          <p className="brand-kicker">Capability Transit System</p>
-          <h1>cts Console</h1>
+          <div className="brand-logo">
+            <div className="brand-logo-icon">
+              <span className="brand-logo-dot" />
+              <span className="brand-logo-dot" />
+              <span className="brand-logo-dot" />
+              <span className="brand-logo-dot" />
+            </div>
+            <div>
+              <p className="brand-kicker">Capability Transit System</p>
+              <h1>CTS Console</h1>
+            </div>
+          </div>
           <p className="brand-copy">
-            本地能力控制台。你看到的是统一后的 source、mount、stable entry，而不是一堆零散配置。
+            统一的能力控制台，整合 source、mount 与 stable entry。
           </p>
         </div>
 
@@ -59,59 +69,88 @@ export function AppLayout() {
       </aside>
 
       <main className="shell-main">
-        <header className="page-header">
-          <div className="page-header-copy">
-            <p className="brand-kicker">Workspace Console</p>
-            <h2>控制台总览</h2>
-            <p className="theme-copy">集中查看运行态摘要，并在右上角快速切换界面主题。</p>
-          </div>
-
-          <div className="page-header-actions">
-            <div className="appearance-switcher">
-              <div className="appearance-label">
-                <span>Appearance Mode</span>
-                <strong>{mode === "system" ? `System · ${resolvedTheme === "dark" ? "Dark" : "Light"}` : mode === "dark" ? "Dark" : "Light"}</strong>
-              </div>
-              <div className="theme-toggle theme-toggle-compact" role="tablist" aria-label="Theme mode">
-                <button type="button" className={mode === "light" ? "theme-option active" : "theme-option"} onClick={() => setMode("light")}>
-                  Light
-                </button>
-                <button type="button" className={mode === "dark" ? "theme-option active" : "theme-option"} onClick={() => setMode("dark")}>
-                  Dark
-                </button>
-                <button type="button" className={mode === "system" ? "theme-option active" : "theme-option"} onClick={() => setMode("system")}>
-                  System
-                </button>
-              </div>
+        <header className="topbar-premium">
+          <div className="topbar-brand">
+            <div className="topbar-brand-icon">
+              <Icon name="dashboard" size={18} />
+            </div>
+            <div>
+              <h2>Workspace Console</h2>
+              <p>集中查看运行态摘要与系统状态</p>
             </div>
           </div>
-        </header>
 
-        <header className="topbar">
-          {summaryQuery.isLoading ? (
-            <LoadingState compact label="读取应用摘要" />
-          ) : summaryQuery.isError ? (
-            <ErrorState compact title="无法读取应用摘要" error={summaryQuery.error} />
-          ) : summaryQuery.data ? (
-            <>
-              <div>
-                <p className="eyebrow">Current Profile</p>
-                <div className="topbar-metric">{summaryQuery.data.profile || "default"}</div>
-              </div>
-              <div>
-                <p className="eyebrow">Config Files</p>
-                <div className="topbar-metric">{summaryQuery.data.config_files.length}</div>
-              </div>
-              <div>
-                <p className="eyebrow">Runtime Surfaces</p>
-                <SurfacePills surfaces={summaryQuery.data.surfaces} />
-              </div>
-              <div>
-                <p className="eyebrow">Theme Mode</p>
-                <div className="topbar-metric topbar-metric-small">{mode === "system" ? `system · ${resolvedTheme}` : mode}</div>
-              </div>
-            </>
-          ) : null}
+          <div className="topbar-content">
+            {summaryQuery.isLoading ? (
+              <LoadingState compact label="读取应用摘要" />
+            ) : summaryQuery.isError ? (
+              <ErrorState compact title="无法读取应用摘要" error={summaryQuery.error} />
+            ) : summaryQuery.data ? (
+              <>
+                <div className="topbar-stat">
+                  <span className="topbar-stat-icon">
+                    <Icon name="auth" size={14} />
+                  </span>
+                  <div>
+                    <span className="topbar-stat-label">Profile</span>
+                    <span className="topbar-stat-value">{summaryQuery.data.profile || "default"}</span>
+                  </div>
+                </div>
+                <div className="topbar-stat">
+                  <span className="topbar-stat-icon">
+                    <Icon name="sources" size={14} />
+                  </span>
+                  <div>
+                    <span className="topbar-stat-label">Config Files</span>
+                    <span className="topbar-stat-value">{summaryQuery.data.config_files.length}</span>
+                  </div>
+                </div>
+                <div className="topbar-stat topbar-stat-wide">
+                  <span className="topbar-stat-icon">
+                    <Icon name="mounts" size={14} />
+                  </span>
+                  <div>
+                    <span className="topbar-stat-label">Surfaces</span>
+                    <SurfacePills surfaces={summaryQuery.data.surfaces} />
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </div>
+
+          <div className="topbar-actions">
+            <div className="theme-switcher">
+              <button
+                type="button"
+                className={`theme-btn ${mode === "light" ? "active" : ""}`}
+                onClick={() => setMode("light")}
+                title="Light mode"
+              >
+                <Icon name="auth" size={16} />
+              </button>
+              <button
+                type="button"
+                className={`theme-btn ${mode === "dark" ? "active" : ""}`}
+                onClick={() => setMode("dark")}
+                title="Dark mode"
+              >
+                <Icon name="drift" size={16} />
+              </button>
+              <button
+                type="button"
+                className={`theme-btn ${mode === "system" ? "active" : ""}`}
+                onClick={() => setMode("system")}
+                title="System preference"
+              >
+                <Icon name="extensions" size={16} />
+              </button>
+            </div>
+            <div className="theme-indicator">
+              <span className="theme-indicator-label">
+                {mode === "system" ? `System · ${resolvedTheme === "dark" ? "Dark" : "Light"}` : mode === "dark" ? "Dark" : "Light"}
+              </span>
+            </div>
+          </div>
         </header>
 
         <Outlet />

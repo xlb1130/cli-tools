@@ -1,34 +1,42 @@
-# Usage Guide
+# 使用指南
 
-`docs/usage` 这一组文档专门面向“怎么实际使用 `cts`”。
+这组文档教你如何实际使用 `cts`。
 
-如果 `docs/00-15` 更偏架构、设计和长期演进，那么这个目录回答的是另一类问题：
+**按需阅读，从简单开始：**
 
-> 我到底该怎么一步一步把能力接进来、挂起来、执行起来？
+## 新手入门（5分钟）
 
-建议阅读顺序：
+1. [30 秒上手](01-quickstart/README.md) - 一条命令跑通
+2. [本地 CLI](02-local-cli/README.md) - 导入你的第一个命令
 
-1. [01-quickstart](./01-quickstart/README.md)：最快跑通一个命令
-2. [02-local-cli](./02-local-cli/README.md)：本地 CLI 命令的导入方式，从简单到进阶
-3. [03-shell](./03-shell/README.md)：Shell 脚本和 shell 任务的挂载方式
-4. [04-http](./04-http/README.md)：手工挂载 HTTP API
-5. [05-openapi](./05-openapi/README.md)：从 OpenAPI spec 导入操作
-6. [06-graphql](./06-graphql/README.md)：从 GraphQL schema / introspection 导入操作
-7. [07-mcp](./07-mcp/README.md)：接入 MCP server 并批量导入 tools
-8. [08-mounts](./08-mounts/README.md)：mount 的设计、命名、批量导入与暴露方式
-9. [09-execution](./09-execution/README.md)：执行、explain、dry-run、inspect 和 serve
-10. [10-plugins](./10-plugins/README.md)：通过 plugin 扩展新的 provider
-11. [11-hooks](./11-hooks/README.md)：给 discovery / help / explain / invoke 绑定 hook
+## 常见场景
 
-这组文档遵循几个原则：
+3. [Shell 脚本](03-shell/README.md) - 挂载 shell 命令
+4. [HTTP API](04-http/README.md) - 手动挂载 API
+5. [OpenAPI](05-openapi/README.md) - 从规范自动导入
+6. [GraphQL](06-graphql/README.md) - 从 schema 导入操作
+7. [MCP Server](07-mcp/README.md) - 接入 MCP tools
 
-- 先从最简单能跑通的路径开始，再逐步增加控制能力
-- 示例文件尽量放在对应目录旁边，方便照抄
-- 把 provider 接入、mount 设计、执行方式拆开讲清楚
-- 需要时同时给出 CLI 驱动和配置驱动两种方式
+## 进阶用法
 
-说明：
+8. [Mount 设计](08-mounts/README.md) - 命令路径和命名
+9. [执行方式](09-execution/README.md) - invoke、explain、dry-run
 
-- 每个目录下的 `examples/` 都是为了配合该章节的讲解
-- 有些示例可以直接在当前仓库里运行
-- 有些示例是模板，需要替换成你自己的 URL、认证信息或 schema 文件
+## 扩展开发
+
+10. [Plugin](10-plugins/README.md) - 添加新的 provider
+11. [Hook](11-hooks/README.md) - 绑定自定义逻辑
+
+---
+
+### 文档原则
+
+- **简单优先**：先跑通，再理解原理
+- **渐进式**：从无配置到配置文件
+- **示例驱动**：每个章节都有可运行的例子
+
+### 快速链接
+
+- [架构文档](../00-rfc-master-architecture.md)
+- [配置模型](../02-config-model.md)
+- [开发指南](../15-install-and-usage.md)

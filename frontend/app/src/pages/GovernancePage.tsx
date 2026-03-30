@@ -25,18 +25,10 @@ export function GovernancePage() {
   const loading = sourcesQuery.isLoading || reliabilityQuery.isLoading || driftQuery.isLoading || logsQuery.isLoading;
   const error = sourcesQuery.error || reliabilityQuery.error || driftQuery.error || logsQuery.error;
 
-  if (loading) {
-    return <LoadingState label="加载 governance 视图" />;
-  }
-
-  if (error) {
-    return <ErrorState title="Governance 页面加载失败" error={error} />;
-  }
-
-  const reliability = reliabilityQuery.data!;
-  const drift = driftQuery.data!;
-  const rateLimiters = Object.entries(reliability.status.rate_limits || {});
-  const concurrencyScopes = Object.entries(reliability.status.concurrency || {});
+  const reliability = reliabilityQuery.data;
+  const drift = driftQuery.data;
+  const rateLimiters = Object.entries(reliability?.status?.rate_limits || {});
+  const concurrencyScopes = Object.entries(reliability?.status?.concurrency || {});
   const highlightedLogs = (logsQuery.data ?? [])
     .filter((item) => {
       if (item.level === "WARNING" || item.level === "ERROR") {
@@ -45,11 +37,19 @@ export function GovernancePage() {
       return /(rate_limit|concurrency|idempotency|retry|drift|sync|auth)/i.test(item.event || "");
     })
     .slice(0, 10);
-  const sourceState = drift.source_drift_state;
+  const sourceState = drift?.source_drift_state;
   const governedMounts = useMemo(
-    () => (drift.drift_governance?.mounts ? Object.values(drift.drift_governance.mounts) : []),
-    [drift.drift_governance],
+    () => (drift?.drift_governance?.mounts ? Object.values(drift.drift_governance.mounts) : []),
+    [drift?.drift_governance],
   );
+
+  if (loading) {
+    return <LoadingState label="加载 governance 视图" />;
+  }
+
+  if (error) {
+    return <ErrorState title="Governance 页面加载失败" error={error} />;
+  }
 
   return (
     <div className="page-stack">
@@ -70,20 +70,20 @@ export function GovernancePage() {
             </article>
             <article className="hero-summary-card">
               <span>Drift Severity</span>
-              <strong>{String(sourceState?.severity || drift.drift_summary?.severity || "clean")}</strong>
+              <strong>{String(sourceState?.severity || drift?.drift_summary?.severity || "clean")}</strong>
             </article>
           </div>
           <div className="stack compact-stack">
-            <span className="sidebar-chip">Budgets {reliability.configured_budget_count}</span>
+            <span className="sidebar-chip">Budgets {reliability?.configured_budget_count ?? 0}</span>
             <span className="sidebar-chip">Rate Limiters {rateLimiters.length}</span>
-            <span className="sidebar-chip">Idempotency {reliability.status.idempotency.total_records}</span>
+            <span className="sidebar-chip">Idempotency {reliability?.status?.idempotency?.total_records ?? 0}</span>
           </div>
         </div>
       </section>
 
       <section className="stats-grid">
-        <StatCard label="Retry Attempts" value={String(reliability.defaults?.retry?.max_attempts ?? "-")} />
-        <StatCard label="Per Source Concurrency" value={String(reliability.defaults?.concurrency?.max_inflight_per_source ?? "-")} />
+        <StatCard label="Retry Attempts" value={String(reliability?.defaults?.retry?.max_attempts ?? "-")} />
+        <StatCard label="Per Source Concurrency" value={String(reliability?.defaults?.concurrency?.max_inflight_per_source ?? "-")} />
         <StatCard label="Blocked Mounts" value={String(sourceState?.blocked_mount_count ?? 0)} />
         <StatCard label="Signal Logs" value={String(highlightedLogs.length)} />
       </section>
@@ -94,22 +94,22 @@ export function GovernancePage() {
             <dl className="detail-grid">
               <div>
                 <dt>Timeout</dt>
-                <dd>{String(reliability.defaults?.timeout_seconds ?? "-")}s</dd>
+                <dd>{String(reliability?.defaults?.timeout_seconds ?? "-")}s</dd>
               </div>
               <div>
                 <dt>Backoff</dt>
-                <dd>{String(reliability.defaults?.retry?.backoff?.strategy || "-")}</dd>
+                <dd>{String(reliability?.defaults?.retry?.backoff?.strategy || "-")}</dd>
               </div>
               <div>
                 <dt>Base Delay</dt>
-                <dd>{String(reliability.defaults?.retry?.backoff?.base_delay_ms ?? "-")}ms</dd>
+                <dd>{String(reliability?.defaults?.retry?.backoff?.base_delay_ms ?? "-")}ms</dd>
               </div>
               <div>
                 <dt>Global Concurrency</dt>
-                <dd>{String(reliability.defaults?.concurrency?.max_inflight_global ?? "-")}</dd>
+                <dd>{String(reliability?.defaults?.concurrency?.max_inflight_global ?? "-")}</dd>
               </div>
             </dl>
-            <JsonViewer data={reliability.configured_budgets} />
+            <JsonViewer data={reliability?.configured_budgets ?? {}} />
           </div>
         </Panel>
 
@@ -135,7 +135,7 @@ export function GovernancePage() {
               </div>
               <div>
                 <dt>Severity</dt>
-                <dd>{String(sourceState?.severity || drift.drift_summary?.severity || "-")}</dd>
+                <dd>{String(sourceState?.severity || drift?.drift_summary?.severity || "-")}</dd>
               </div>
               <div>
                 <dt>Affected</dt>
@@ -151,7 +151,7 @@ export function GovernancePage() {
                 Open Drift Page
               </Link>
             </div>
-            <JsonViewer data={sourceState || drift.drift_summary || {}} />
+            <JsonViewer data={sourceState || drift?.drift_summary || {}} />
           </div>
         </Panel>
       </div>
@@ -197,10 +197,11 @@ export function GovernancePage() {
           <div className="state">
             <strong>Idempotency Cache</strong>
             <p>
-              total={reliability.status.idempotency.total_records} pending={reliability.status.idempotency.pending} completed=
-              {reliability.status.idempotency.completed} failed={reliability.status.idempotency.failed}
+              total={reliability?.status?.idempotency?.total_records ?? 0} pending={reliability?.status?.idempotency?.pending ?? 0} completed=
+              {reliability?.status?.idempotency?.completed ?? 0} failed=
+              {reliability?.status?.idempotency?.failed ?? 0}
             </p>
-            <p className="muted">{reliability.status.idempotency.cache_dir}</p>
+            <p className="muted">{reliability?.status?.idempotency?.cache_dir ?? "-"}</p>
           </div>
           <div className="state">
             <strong>Governed Mounts</strong>

@@ -351,7 +351,11 @@ def _resolve_transport_type(source_config: SourceConfig, app: "CTSApp") -> str:
 
 def _supports_mcp_cli_noninteractive(server_config: Dict[str, Any]) -> bool:
     transport_type = str(server_config.get("type") or ("streamable_http" if server_config.get("url") else "stdio")).lower()
-    return transport_type == "stdio" and bool(server_config.get("command"))
+    # mcp-cli supports stdio, sse, and streamable_http for non-interactive operations
+    return transport_type in {"stdio", "sse", "streamable_http"} and (
+        transport_type == "stdio" and bool(server_config.get("command")) or
+        transport_type in {"sse", "streamable_http"} and bool(server_config.get("url"))
+    )
 
 
 def _resolve_mcp_cli_binary(source_config: SourceConfig) -> Optional[str]:
@@ -367,7 +371,15 @@ def _resolve_mcp_cli_binary(source_config: SourceConfig) -> Optional[str]:
 
 
 def _bridge_script_path() -> Path:
-    return Path(__file__).resolve().parents[3] / "scripts" / "mcp_bridge.mjs"
+    current = Path(__file__).resolve()
+    candidates = [
+        current.parents[1] / "scripts" / "mcp_bridge.mjs",  # packaged with cts
+        current.parents[3] / "scripts" / "mcp_bridge.mjs",  # source tree / legacy layout
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def _bridge_command_for_primitive(primitive_type: Optional[str]) -> str:
