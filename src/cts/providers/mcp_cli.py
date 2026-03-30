@@ -373,6 +373,7 @@ def _resolve_mcp_cli_binary(source_config: SourceConfig) -> Optional[str]:
 def _bridge_script_path() -> Path:
     current = Path(__file__).resolve()
     candidates = [
+        Path.cwd() / "scripts" / "mcp_bridge.mjs",  # local workspace with node_modules
         current.parents[1] / "scripts" / "mcp_bridge.mjs",  # packaged with cts
         current.parents[3] / "scripts" / "mcp_bridge.mjs",  # source tree / legacy layout
     ]
