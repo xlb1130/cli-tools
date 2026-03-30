@@ -97,6 +97,50 @@ cts my-mcp --help
 
 Continue with [MCP](docs/usage/07-mcp/README.md).
 
+## Start the Web UI
+
+Launch the built-in web interface to interact with your CTS instance:
+
+```bash
+cts manage ui
+```
+
+This starts the HTTP API together with the bundled frontend UI. By default it runs on `http://127.0.0.1:8787`.
+
+Additional options:
+
+```bash
+# Open browser automatically
+cts manage ui --open
+
+# Use custom host/port
+cts manage ui --host 0.0.0.0 --port 9000
+
+# Use a custom UI directory
+cts manage ui --ui-dir /path/to/ui/dist
+```
+
+If the UI assets are not found, build them first:
+
+```bash
+cd frontend/app
+npm install
+npm run build
+```
+
+For more control, you can also use the HTTP server command:
+
+```bash
+# Start HTTP API only
+cts manage serve http
+
+# Start HTTP API with UI
+cts manage serve http --ui
+
+# Start HTTP API with UI and open browser
+cts manage serve http --ui --open
+```
+
 ## Core Model
 
 ```text

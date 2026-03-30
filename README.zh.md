@@ -97,6 +97,50 @@ cts my-mcp --help
 
 更完整的方式见 [MCP Server](docs/usage/07-mcp/README.md)。
 
+## 启动 Web UI
+
+启动内置的 Web 界面来与你的 CTS 实例交互：
+
+```bash
+cts manage ui
+```
+
+这会启动 HTTP API 并同时提供前端 UI。默认运行在 `http://127.0.0.1:8787`。
+
+其他选项：
+
+```bash
+# 自动打开浏览器
+cts manage ui --open
+
+# 使用自定义主机/端口
+cts manage ui --host 0.0.0.0 --port 9000
+
+# 使用自定义 UI 目录
+cts manage ui --ui-dir /path/to/ui/dist
+```
+
+如果找不到 UI 资源，需要先构建：
+
+```bash
+cd frontend/app
+npm install
+npm run build
+```
+
+如果需要更多控制，也可以直接使用 HTTP server 命令：
+
+```bash
+# 只启动 HTTP API
+cts manage serve http
+
+# 启动 HTTP API 和 UI
+cts manage serve http --ui
+
+# 启动 HTTP API 和 UI 并自动打开浏览器
+cts manage serve http --ui --open
+```
+
 ## 核心模型
 
 ```text
