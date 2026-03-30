@@ -1,70 +1,321 @@
 from __future__ import annotations
 
 import json
+import fnmatch
+import re
 import shlex
 import sys
+import time
 import uuid
 import webbrowser
 from collections import OrderedDict
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import update_wrapper
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import click
 import yaml
 from click.shell_completion import get_completion_class
 
 from cts import __version__
-from cts.app import CTSApp, build_app, tokenize_identifier
-from cts.config.editor import (
-    ConfigEditError,
-    apply_assignment,
-    apply_update,
-    conflict_signatures,
-    ensure_list,
-    ensure_mapping,
-    parse_assignment,
-    parse_string_map_item,
-    prepare_edit_session,
-)
-from cts.config.lint import lint_loaded_config
-from cts.config.loader import load_config
+from cts.config.loader import load_config, load_raw_config
 from cts.execution.errors import ConfigError, RegistryError, exit_code_for_exception
-from cts.execution.help_compiler import build_click_params, extract_request_args
 from cts.execution.logging import (
     emit_app_event,
     emit_audit_event,
     get_run,
+    list_app_events,
     list_runs,
     record_run,
     summarize_result,
     utc_now_iso,
 )
-from cts.importers import (
-    import_cli_completion,
-    import_cli_help,
-    import_cli_manpage,
-    import_cli_schema,
-    inspect_cli_help,
-    merge_operation_into_manifest,
-    write_manifest_operations,
-)
-from cts.execution.runtime import build_error_envelope, explain_mount, invoke_mount, render_payload
-from cts.presentation import (
-    build_app_summary,
-    build_auth_inventory,
-    build_auth_profile,
-    build_mount_details,
-    build_mount_help,
-    build_reliability_status,
-    build_secret_detail,
-    build_secret_inventory,
-    build_source_check_result,
-    build_source_details,
-    build_source_summary,
-)
-from cts.surfaces.http import create_http_server, default_ui_dist_dir
+
+if TYPE_CHECKING:
+    from cts.app import CTSApp
+else:
+    def CTSApp(*args, **kwargs):
+        from cts.app import CTSApp as impl
+
+        return impl(*args, **kwargs)
+
+
+def build_app(*args, **kwargs):
+    from cts.app import build_app as impl
+
+    return impl(*args, **kwargs)
+
+
+def _config_edit_error(message: str):
+    from cts.config.editor import ConfigEditError
+
+    return ConfigEditError(message)
+
+
+def apply_assignment(*args, **kwargs):
+    from cts.config.editor import apply_assignment as impl
+
+    return impl(*args, **kwargs)
+
+
+def apply_update(*args, **kwargs):
+    from cts.config.editor import apply_update as impl
+
+    return impl(*args, **kwargs)
+
+
+def conflict_signatures(*args, **kwargs):
+    from cts.config.editor import conflict_signatures as impl
+
+    return impl(*args, **kwargs)
+
+
+def ensure_list(*args, **kwargs):
+    from cts.config.editor import ensure_list as impl
+
+    return impl(*args, **kwargs)
+
+
+def ensure_mapping(*args, **kwargs):
+    from cts.config.editor import ensure_mapping as impl
+
+    return impl(*args, **kwargs)
+
+
+def parse_assignment(*args, **kwargs):
+    from cts.config.editor import parse_assignment as impl
+
+    return impl(*args, **kwargs)
+
+
+def parse_string_map_item(*args, **kwargs):
+    from cts.config.editor import parse_string_map_item as impl
+
+    return impl(*args, **kwargs)
+
+
+def prepare_edit_session(*args, **kwargs):
+    from cts.config.editor import prepare_edit_session as impl
+
+    return impl(*args, **kwargs)
+
+
+def lint_loaded_config(*args, **kwargs):
+    from cts.config.lint import lint_loaded_config as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_generated_mount(*args, **kwargs):
+    from cts.app import build_generated_mount as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_mount_record(*args, **kwargs):
+    from cts.app import build_mount_record as impl
+
+    return impl(*args, **kwargs)
+
+
+def operation_matches_select(*args, **kwargs):
+    from cts.app import operation_matches_select as impl
+
+    return impl(*args, **kwargs)
+
+
+def synthesize_operation(*args, **kwargs):
+    from cts.app import synthesize_operation as impl
+
+    return impl(*args, **kwargs)
+
+
+def tokenize_identifier(*args, **kwargs):
+    from cts.app import tokenize_identifier as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_click_params(*args, **kwargs):
+    from cts.execution.help_compiler import build_click_params as impl
+
+    return impl(*args, **kwargs)
+
+
+def compile_command_help(*args, **kwargs):
+    from cts.execution.help_compiler import compile_command_help as impl
+
+    return impl(*args, **kwargs)
+
+
+def extract_request_args(*args, **kwargs):
+    from cts.execution.help_compiler import extract_request_args as impl
+
+    return impl(*args, **kwargs)
+
+
+def import_cli_completion(*args, **kwargs):
+    from cts.importers import import_cli_completion as impl
+
+    return impl(*args, **kwargs)
+
+
+def import_cli_help(*args, **kwargs):
+    from cts.importers import import_cli_help as impl
+
+    return impl(*args, **kwargs)
+
+
+def import_cli_manpage(*args, **kwargs):
+    from cts.importers import import_cli_manpage as impl
+
+    return impl(*args, **kwargs)
+
+
+def import_cli_schema(*args, **kwargs):
+    from cts.importers import import_cli_schema as impl
+
+    return impl(*args, **kwargs)
+
+
+def inspect_cli_help(*args, **kwargs):
+    from cts.importers import inspect_cli_help as impl
+
+    return impl(*args, **kwargs)
+
+
+def merge_operation_into_manifest(*args, **kwargs):
+    from cts.importers import merge_operation_into_manifest as impl
+
+    return impl(*args, **kwargs)
+
+
+def write_manifest_operations(*args, **kwargs):
+    from cts.importers import write_manifest_operations as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_error_envelope(*args, **kwargs):
+    from cts.execution.runtime import build_error_envelope as impl
+
+    return impl(*args, **kwargs)
+
+
+def explain_mount(*args, **kwargs):
+    from cts.execution.runtime import explain_mount as impl
+
+    return impl(*args, **kwargs)
+
+
+def invoke_mount(*args, **kwargs):
+    from cts.execution.runtime import invoke_mount as impl
+
+    return impl(*args, **kwargs)
+
+
+def render_payload(*args, **kwargs):
+    from cts.execution.runtime import render_payload as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_app_summary(*args, **kwargs):
+    from cts.presentation import build_app_summary as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_auth_inventory(*args, **kwargs):
+    from cts.presentation import build_auth_inventory as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_auth_profile(*args, **kwargs):
+    from cts.presentation import build_auth_profile as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_mount_details(*args, **kwargs):
+    from cts.presentation import build_mount_details as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_mount_help(*args, **kwargs):
+    from cts.presentation import build_mount_help as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_reliability_status(*args, **kwargs):
+    from cts.presentation import build_reliability_status as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_secret_detail(*args, **kwargs):
+    from cts.presentation import build_secret_detail as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_secret_inventory(*args, **kwargs):
+    from cts.presentation import build_secret_inventory as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_source_check_result(*args, **kwargs):
+    from cts.presentation import build_source_check_result as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_source_details(*args, **kwargs):
+    from cts.presentation import build_source_details as impl
+
+    return impl(*args, **kwargs)
+
+
+def build_source_summary(*args, **kwargs):
+    from cts.presentation import build_source_summary as impl
+
+    return impl(*args, **kwargs)
+
+
+def load_manifest(*args, **kwargs):
+    from cts.providers.cli import load_manifest as impl
+
+    return impl(*args, **kwargs)
+
+
+def manifest_operations_from_data(*args, **kwargs):
+    from cts.providers.cli import manifest_operations_from_data as impl
+
+    return impl(*args, **kwargs)
+
+
+def operation_from_config(*args, **kwargs):
+    from cts.providers.cli import operation_from_config as impl
+
+    return impl(*args, **kwargs)
+
+
+def create_http_server(*args, **kwargs):
+    from cts.surfaces.http import create_http_server as impl
+
+    return impl(*args, **kwargs)
+
+
+def default_ui_dist_dir(*args, **kwargs):
+    from cts.surfaces.http import default_ui_dist_dir as impl
+
+    return impl(*args, **kwargs)
 
 
 @dataclass
@@ -72,20 +323,72 @@ class CLIState:
     config_path: Optional[Path]
     profile: Optional[str]
     global_output: str = "text"
-    _app: Optional[CTSApp] = field(default=None, init=False, repr=False)
+    help_requested: bool = False
+    requested_command_path: tuple[str, ...] = ()
+    _help_app: Optional[CTSApp] = field(default=None, init=False, repr=False)
+    _full_app: Optional[CTSApp] = field(default=None, init=False, repr=False)
+    _static_help_catalog: Any = field(default=None, init=False, repr=False)
+    _static_help_catalog_loaded: bool = field(default=False, init=False, repr=False)
+    _direct_help_mount: Any = field(default=None, init=False, repr=False)
+    _direct_help_mount_loaded: bool = field(default=False, init=False, repr=False)
 
-    def get_app(self) -> CTSApp:
-        if self._app is None:
-            self._app = build_app(str(self.config_path) if self.config_path else None, profile=self.profile)
-            setattr(self._app, "global_output", self.global_output)
-        return self._app
+    def get_app(self, mode: str = "auto") -> CTSApp:
+        resolved_mode = "help" if mode == "auto" and self.help_requested else ("full" if mode == "auto" else mode)
+        if resolved_mode == "help":
+            if self._full_app is not None:
+                return self._full_app
+            if self._help_app is None:
+                self._help_app = build_app(
+                    str(self.config_path) if self.config_path else None,
+                    profile=self.profile,
+                    compile_mode="help",
+                )
+                setattr(self._help_app, "global_output", self.global_output)
+            return self._help_app
+
+        if self._full_app is None:
+            self._full_app = build_app(
+                str(self.config_path) if self.config_path else None,
+                profile=self.profile,
+                compile_mode="full",
+            )
+            setattr(self._full_app, "global_output", self.global_output)
+        return self._full_app
+
+    def get_direct_help_mount(self):
+        if self._direct_help_mount_loaded:
+            return self._direct_help_mount
+        self._direct_help_mount_loaded = True
+        if not self.help_requested or not self.requested_command_path:
+            self._direct_help_mount = None
+            return None
+        try:
+            catalog = self.get_static_help_catalog()
+            self._direct_help_mount = catalog.find_by_path(self.requested_command_path) if catalog else None
+        except Exception:
+            self._direct_help_mount = None
+        return self._direct_help_mount
+
+    def get_static_help_catalog(self):
+        if self._static_help_catalog_loaded:
+            return self._static_help_catalog
+        self._static_help_catalog_loaded = True
+        if not self.help_requested:
+            self._static_help_catalog = None
+            return None
+        try:
+            loaded = load_raw_config(str(self.config_path) if self.config_path else None)
+            self._static_help_catalog = _build_static_help_catalog(loaded)
+        except Exception:
+            self._static_help_catalog = None
+        return self._static_help_catalog
 
 
 def pass_app(func):
     @click.pass_context
     def wrapper(ctx: click.Context, *args, **kwargs):
         try:
-            app = _get_app(ctx)
+            app = _get_app(ctx, mode="full")
         except Exception as exc:
             _fail(ctx, exc, "config_load", _error_output_format(ctx, kwargs.get("output_format")))
             return None
@@ -102,6 +405,12 @@ class CatalogBackedGroup(click.Group):
 
     def list_commands(self, ctx):
         commands = [] if self.dynamic_only else list(super().list_commands(ctx))
+        state = _get_state(ctx)
+        if state.help_requested:
+            catalog = state.get_static_help_catalog()
+            if catalog is not None:
+                commands.extend(catalog.child_tokens(self.path_prefix))
+                return sorted(set(commands))
         try:
             app = _get_app(ctx)
         except Exception:
@@ -110,10 +419,43 @@ class CatalogBackedGroup(click.Group):
         return sorted(set(commands))
 
     def get_command(self, ctx, cmd_name):
+        state = _get_state(ctx)
+        direct_mount = state.get_direct_help_mount()
+        if direct_mount is not None:
+            next_prefix = self.path_prefix + (cmd_name,)
+            target_path = tuple(direct_mount.command_path)
+            if next_prefix == target_path[: len(next_prefix)]:
+                if len(next_prefix) < len(target_path):
+                    return DirectPathGroup(
+                        name=cmd_name,
+                        path_prefix=next_prefix,
+                        target_mount=direct_mount,
+                        help="Dynamic command group for " + " ".join(next_prefix),
+                        no_args_is_help=True,
+                    )
+                return build_static_help_command(direct_mount)
+
         if not self.dynamic_only:
             builtin = super().get_command(ctx, cmd_name)
             if builtin is not None:
                 return builtin
+
+        if state.help_requested:
+            catalog = state.get_static_help_catalog()
+            if catalog is not None:
+                next_prefix = self.path_prefix + (cmd_name,)
+                mount = catalog.find_by_path(next_prefix)
+                if mount:
+                    return build_static_help_command(mount)
+                if catalog.has_group(next_prefix):
+                    return CatalogBackedGroup(
+                        name=cmd_name,
+                        path_prefix=next_prefix,
+                        dynamic_only=True,
+                        help=catalog.group_summary(next_prefix),
+                        no_args_is_help=True,
+                    )
+                return None
 
         try:
             app = _get_app(ctx)
@@ -153,6 +495,34 @@ class GroupedOptionCommand(click.Command):
                 formatter.write_dl(records)
 
 
+class DirectPathGroup(click.Group):
+    def __init__(self, *args, path_prefix=None, target_mount=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.path_prefix = tuple(path_prefix or ())
+        self.target_mount = target_mount
+
+    def list_commands(self, ctx):
+        target_path = tuple(self.target_mount.command_path)
+        if len(self.path_prefix) >= len(target_path):
+            return []
+        return [target_path[len(self.path_prefix)]]
+
+    def get_command(self, ctx, cmd_name):
+        next_prefix = self.path_prefix + (cmd_name,)
+        target_path = tuple(self.target_mount.command_path)
+        if next_prefix != target_path[: len(next_prefix)]:
+            return None
+        if len(next_prefix) < len(target_path):
+            return DirectPathGroup(
+                name=cmd_name,
+                path_prefix=next_prefix,
+                target_mount=self.target_mount,
+                help="Dynamic command group for " + " ".join(next_prefix),
+                no_args_is_help=True,
+            )
+        return build_static_help_command(self.target_mount)
+
+
 @click.group(
     name="cts",
     cls=CatalogBackedGroup,
@@ -171,7 +541,14 @@ class GroupedOptionCommand(click.Command):
 @click.version_option(__version__, prog_name="cts")
 @click.pass_context
 def main(ctx: click.Context, config_path: Optional[Path], profile: Optional[str], global_output: str) -> None:
-    ctx.obj = CLIState(config_path=config_path, profile=profile, global_output=global_output)
+    raw = _parse_root_argv(sys.argv[1:])
+    ctx.obj = CLIState(
+        config_path=config_path or raw.get("config_path"),
+        profile=profile or raw.get("profile"),
+        global_output=global_output or raw.get("global_output", "text"),
+        help_requested=bool(raw.get("help_requested")),
+        requested_command_path=tuple(raw.get("command_path", [])),
+    )
 
 
 @main.group()
@@ -553,7 +930,8 @@ def source_test(app: CTSApp, source_name: str, discover: bool, output_format: st
         return
     payload = build_source_check_result(app, source_name, source)
     if discover:
-        sync_result = app.sync(source_name)
+        with _status(output_format, f"Running discovery for source '{source_name}'..."):
+            sync_result = app.sync(source_name)
         sync_items = sync_result.get("items", [])
         payload["discovery"] = sync_items[0] if sync_items else {"ok": False, "source": source_name, "operation_count": 0}
         payload["discovery_report_path"] = sync_result.get("report_path")
@@ -568,6 +946,7 @@ def source_test(app: CTSApp, source_name: str, discover: bool, output_format: st
 @click.argument("source_name")
 @click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Remove from a specific config file.")
 @click.option("--force", is_flag=True, help="Force removal even if mounts depend on this source.")
+@click.option("--yes", is_flag=True, help="Skip interactive confirmation.")
 @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
 @click.pass_context
 def source_remove(
@@ -575,6 +954,7 @@ def source_remove(
     source_name: str,
     target_file: Optional[Path],
     force: bool,
+    yes: bool,
     output_format: str,
 ) -> None:
     """Remove a source from configuration.
@@ -610,6 +990,15 @@ def source_remove(
                     f"先手动删除依赖的 mount: {', '.join(m.mount_id for m in dependent_mounts[:5])}"
                 ],
             )
+        _maybe_confirm(
+            (
+                f"Remove source '{source_name}'"
+                + (f" and {len(dependent_mounts)} dependent mount(s)" if dependent_mounts else "")
+                + "?"
+            ),
+            assume_yes=yes,
+            output_format=output_format,
+        )
         
         def mutator(payload: Dict[str, Any]) -> None:
             sources = payload.get("sources", {})
@@ -1434,19 +1823,20 @@ def import_shell_command(
                 code="shell_import_source_required",
                 suggestions=["传入 --exec 'echo hello'，或传入 --script-file ./script.sh。"],
             )
-        payload = _execute_import_shell(
-            ctx,
-            source_name=source_name,
-            exec_command=exec_command,
-            script_file=script_file,
-            shell_bin=shell_bin,
-            under_values=under_values,
-            title=title,
-            description=description,
-            risk=risk,
-            output_mode=output_mode,
-            apply=apply,
-        )
+        with _status(output_format, f"Preparing shell import for '{source_name}'..."):
+            payload = _execute_import_shell(
+                ctx,
+                source_name=source_name,
+                exec_command=exec_command,
+                script_file=script_file,
+                shell_bin=shell_bin,
+                under_values=under_values,
+                title=title,
+                description=description,
+                risk=risk,
+                output_mode=output_mode,
+                apply=apply,
+            )
         click.echo(render_payload(payload, output_format))
     except Exception as exc:
         _fail(ctx, exc, "import_shell", output_format)
@@ -1481,15 +1871,16 @@ def import_mcp_command(
         cts import mcp my-mcp --server-name my-server --config-file ./servers.json --apply
     """
     try:
-        payload = _execute_import_mcp(
-            ctx,
-            source_name=source_name,
-            server_config=server_config,
-            server_name=server_name,
-            config_file=config_file,
-            under_values=under_values,
-            apply=apply,
-        )
+        with _status(output_format, f"Preparing MCP import for '{source_name}'..."):
+            payload = _execute_import_mcp(
+                ctx,
+                source_name=source_name,
+                server_config=server_config,
+                server_name=server_name,
+                config_file=config_file,
+                under_values=under_values,
+                apply=apply,
+            )
         click.echo(render_payload(payload, output_format))
     except Exception as exc:
         _fail(ctx, exc, "import_mcp", output_format)
@@ -1758,7 +2149,10 @@ def _execute_import_mcp(
             sync_result = compiled_app.sync(source_name)
             sync_items = sync_result.get("items", [])
             discovery = sync_items[0] if sync_items else {}
-            operations = compiled_app.source_operations.get(source_name, {})
+            discovery_ok = bool(discovery.get("ok", False))
+            if not discovery_ok:
+                discovery = {**discovery, "operation_count": 0}
+            operations = compiled_app.source_operations.get(source_name, {}) if discovery_ok else {}
 
             mounts_to_create = []
             for op_id, op in operations.items():
@@ -2343,12 +2737,14 @@ def mount_show(app: CTSApp, mount_id: str, output_format: str) -> None:
 @mount.command("remove")
 @click.argument("mount_id")
 @click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Remove from a specific config file.")
+@click.option("--yes", is_flag=True, help="Skip interactive confirmation.")
 @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
 @click.pass_context
 def mount_remove(
     ctx: click.Context,
     mount_id: str,
     target_file: Optional[Path],
+    yes: bool,
     output_format: str,
 ) -> None:
     """Remove a mount from configuration.
@@ -2368,6 +2764,11 @@ def mount_remove(
         mount = app.catalog.find_by_id(mount_id)
         if not mount:
             raise RegistryError(f"mount not found: {mount_id}", code="mount_not_found")
+        _maybe_confirm(
+            f"Remove mount '{mount_id}' from source '{mount.source_name}'?",
+            assume_yes=yes,
+            output_format=output_format,
+        )
         
         def mutator(payload: Dict[str, Any]) -> None:
             mounts = payload.get("mounts", [])
@@ -2453,7 +2854,8 @@ def mount_import(
         operations = app.source_operations.get(source_name, {})
         if not operations:
             # Try to discover
-            sync_result = app.sync(source_name)
+            with _status(output_format, f"Discovering operations for source '{source_name}'..."):
+                sync_result = app.sync(source_name)
             operations = app.source_operations.get(source_name, {})
         
         if not operations:
@@ -2666,14 +3068,20 @@ def alias_add(ctx: click.Context, alias_from: str, alias_to: str, target_file: O
 @alias_group.command("remove")
 @click.argument("alias_from")
 @click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Remove from a specific loaded config file.")
+@click.option("--yes", is_flag=True, help="Skip interactive confirmation.")
 @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
 @click.pass_context
-def alias_remove(ctx: click.Context, alias_from: str, target_file: Optional[Path], output_format: str) -> None:
+def alias_remove(ctx: click.Context, alias_from: str, target_file: Optional[Path], yes: bool, output_format: str) -> None:
     state = _get_state(ctx)
     try:
         session = prepare_edit_session(state.config_path, target_file=target_file)
         from_tokens = _split_command_segments([alias_from])
         removed: Optional[Dict[str, Any]] = None
+        _maybe_confirm(
+            f"Remove alias '{' '.join(from_tokens)}'?",
+            assume_yes=yes,
+            output_format=output_format,
+        )
 
         def mutator(payload: Dict[str, Any]) -> None:
             nonlocal removed
@@ -3029,7 +3437,9 @@ def explain(app: CTSApp, mount_id: str, input_json: Optional[str], input_file: O
 @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
 @pass_app
 def sync(app: CTSApp, source_name: Optional[str], output_format: str) -> None:
-    payload = app.sync(source_name)
+    label = f"Syncing source '{source_name}'..." if source_name else "Syncing all sources..."
+    with _status(output_format, label):
+        payload = app.sync(source_name)
     click.echo(render_payload(payload, output_format))
 
 
@@ -3041,9 +3451,10 @@ def reconcile() -> None:
 @reconcile.command("drift")
 @click.argument("source_name")
 @click.option("--action", "reconcile_action", type=click.Choice(["accept-breaking"]), default="accept-breaking", show_default=True)
+@click.option("--yes", is_flag=True, help="Skip interactive confirmation.")
 @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
 @pass_app
-def reconcile_drift(app: CTSApp, source_name: str, reconcile_action: str, output_format: str) -> None:
+def reconcile_drift(app: CTSApp, source_name: str, reconcile_action: str, yes: bool, output_format: str) -> None:
     report = app.discovery_store.load_latest_sync_report(source_name)
     if not report:
         _fail(
@@ -3074,6 +3485,11 @@ def reconcile_drift(app: CTSApp, source_name: str, reconcile_action: str, output
             output_format,
         )
         return
+    _maybe_confirm(
+        f"Apply drift reconciliation '{reconcile_action}' for source '{source_name}'?",
+        assume_yes=yes,
+        output_format=output_format,
+    )
 
     normalized_action = reconcile_action.replace("-", "_")
     report_generated_at = str(source_state.get("report_generated_at") or report.get("generated_at") or "")
@@ -3200,10 +3616,16 @@ def auth_refresh(app: CTSApp, name: str, output_format: str) -> None:
 
 @auth.command("logout")
 @click.argument("name")
+@click.option("--yes", is_flag=True, help="Skip interactive confirmation.")
 @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
 @pass_app
-def auth_logout(app: CTSApp, name: str, output_format: str) -> None:
+def auth_logout(app: CTSApp, name: str, yes: bool, output_format: str) -> None:
     try:
+        _maybe_confirm(
+            f"Log out auth profile '{name}'?",
+            assume_yes=yes,
+            output_format=output_format,
+        )
         payload = {
             "ok": True,
             "action": "auth_logout",
@@ -3270,10 +3692,36 @@ def runs() -> None:
 
 @runs.command("list")
 @click.option("--limit", type=click.IntRange(1, 200), default=20, show_default=True)
+@click.option("--mount-id", default=None, help="Filter by mount id.")
+@click.option("--source", default=None, help="Filter by source name.")
+@click.option("--ok", "ok_only", type=click.Choice(["true", "false"]), default=None, help="Filter by success state.")
 @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
 @pass_app
-def runs_list(app: CTSApp, limit: int, output_format: str) -> None:
-    payload = {"items": list_runs(app, limit=limit)}
+def runs_list(
+    app: CTSApp,
+    limit: int,
+    mount_id: Optional[str],
+    source: Optional[str],
+    ok_only: Optional[str],
+    output_format: str,
+) -> None:
+    items = list_runs(app, limit=max(limit * 5, limit))
+    if mount_id:
+        items = [item for item in items if str(item.get("mount_id") or "") == mount_id]
+    if source:
+        items = [item for item in items if str(item.get("source") or "") == source]
+    if ok_only is not None:
+        expected = ok_only == "true"
+        items = [item for item in items if bool(item.get("ok")) is expected]
+    payload = {
+        "items": items[:limit],
+        "summary": {
+            "count": len(items[:limit]),
+            "mount_id": mount_id,
+            "source": source,
+            "ok": ok_only,
+        },
+    }
     click.echo(render_payload(payload, output_format))
 
 
@@ -3287,6 +3735,158 @@ def runs_show(app: CTSApp, run_id: str, output_format: str) -> None:
         _fail(click.get_current_context(), RegistryError(f"run not found: {run_id}", code="run_not_found"), "show_run", output_format)
         return
     click.echo(render_payload(payload, output_format))
+
+
+@runs.command("watch")
+@click.option("--limit", type=click.IntRange(1, 200), default=20, show_default=True)
+@click.option("--interval", type=click.FloatRange(0.2, 60.0), default=2.0, show_default=True)
+@click.option("--iterations", type=click.IntRange(1, 1000), default=None, help="Stop after N refresh cycles.")
+@click.option("--mount-id", default=None, help="Filter by mount id.")
+@click.option("--source", default=None, help="Filter by source name.")
+@click.option("--ok", "ok_only", type=click.Choice(["true", "false"]), default=None, help="Filter by success state.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
+@pass_app
+def runs_watch(
+    app: CTSApp,
+    limit: int,
+    interval: float,
+    iterations: Optional[int],
+    mount_id: Optional[str],
+    source: Optional[str],
+    ok_only: Optional[str],
+    output_format: str,
+) -> None:
+    seen: set[str] = set()
+    cycle = 0
+    while iterations is None or cycle < iterations:
+        items = list_runs(app, limit=max(limit * 5, limit))
+        if mount_id:
+            items = [item for item in items if str(item.get("mount_id") or "") == mount_id]
+        if source:
+            items = [item for item in items if str(item.get("source") or "") == source]
+        if ok_only is not None:
+            expected = ok_only == "true"
+            items = [item for item in items if bool(item.get("ok")) is expected]
+        new_items = []
+        for item in reversed(items[:limit]):
+            run_id = str(item.get("run_id") or "")
+            if not run_id or run_id in seen:
+                continue
+            seen.add(run_id)
+            new_items.append(item)
+        if new_items:
+            click.echo(
+                render_payload(
+                    {
+                        "items": new_items,
+                        "summary": {
+                            "mode": "watch",
+                            "count": len(new_items),
+                            "mount_id": mount_id,
+                            "source": source,
+                            "ok": ok_only,
+                        },
+                    },
+                    output_format,
+                )
+            )
+        cycle += 1
+        if iterations is None or cycle < iterations:
+            time.sleep(interval)
+
+
+@manage.group()
+def logs() -> None:
+    """Application log inspection commands."""
+
+
+@logs.command("recent")
+@click.option("--limit", type=click.IntRange(1, 200), default=20, show_default=True)
+@click.option("--level", default=None, help="Filter by log level.")
+@click.option("--source", default=None, help="Filter by source name.")
+@click.option("--mount-id", default=None, help="Filter by mount id.")
+@click.option("--event", "event_name", default=None, help="Filter by exact event name.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
+@pass_app
+def logs_recent(
+    app: CTSApp,
+    limit: int,
+    level: Optional[str],
+    source: Optional[str],
+    mount_id: Optional[str],
+    event_name: Optional[str],
+    output_format: str,
+) -> None:
+    items = list_app_events(
+        app,
+        limit=limit,
+        events=[event_name] if event_name else None,
+        level=level,
+        source=source,
+        mount_id=mount_id,
+    )
+    payload = {
+        "items": items,
+        "summary": {
+            "count": len(items),
+            "level": level,
+            "source": source,
+            "mount_id": mount_id,
+            "event": event_name,
+        },
+    }
+    click.echo(render_payload(payload, output_format))
+
+
+@logs.command("watch")
+@click.option("--limit", type=click.IntRange(1, 200), default=20, show_default=True)
+@click.option("--interval", type=click.FloatRange(0.2, 60.0), default=2.0, show_default=True)
+@click.option("--iterations", type=click.IntRange(1, 1000), default=None, help="Stop after N refresh cycles.")
+@click.option("--level", default=None, help="Filter by log level.")
+@click.option("--source", default=None, help="Filter by source name.")
+@click.option("--mount-id", default=None, help="Filter by mount id.")
+@click.option("--event", "event_name", default=None, help="Filter by exact event name.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
+@pass_app
+def logs_watch(
+    app: CTSApp,
+    limit: int,
+    interval: float,
+    iterations: Optional[int],
+    level: Optional[str],
+    source: Optional[str],
+    mount_id: Optional[str],
+    event_name: Optional[str],
+    output_format: str,
+) -> None:
+    seen: set[tuple[str, str, str, str]] = set()
+    cycle = 0
+    while iterations is None or cycle < iterations:
+        items = list_app_events(
+            app,
+            limit=limit,
+            events=[event_name] if event_name else None,
+            level=level,
+            source=source,
+            mount_id=mount_id,
+        )
+        new_items = []
+        for item in reversed(items):
+            event_key = (
+                str(item.get("ts") or ""),
+                str(item.get("event") or ""),
+                str(item.get("run_id") or ""),
+                str(item.get("mount_id") or ""),
+            )
+            if event_key in seen:
+                continue
+            seen.add(event_key)
+            new_items.append(item)
+        if new_items:
+            click.echo(render_payload({"items": new_items, "summary": {"mode": "watch", "count": len(new_items)}}, output_format))
+        cycle += 1
+        if iterations is None or cycle < iterations:
+            time.sleep(interval)
 
 
 @manage.group()
@@ -3666,41 +4266,78 @@ def doctor(app: CTSApp, output_format: str, compatibility: bool, check_auth: boo
 
 
 def build_dynamic_command(app: CTSApp, mount) -> click.Command:
-    emit_app_event(
+    return LazyDynamicCommand(
         app,
-        event="help_compile_start",
-        source=mount.source_name,
-        mount_id=mount.mount_id,
-        operation_id=mount.operation.id,
+        mount,
+        name=mount.command_path[-1],
+        callback=_dynamic_callback(mount),
+        short_help=mount.summary or mount.operation.title,
     )
-    help_payload = build_mount_help(app, mount)
-    emit_app_event(
-        app,
-        event="help_compile_complete",
-        source=mount.source_name,
-        mount_id=mount.mount_id,
-        operation_id=mount.operation.id,
-        data={"schema_provenance": help_payload.get("schema_provenance")},
-    )
+
+
+def build_static_help_command(mount) -> click.Command:
+    help_content = compile_command_help(mount)
     return GroupedOptionCommand(
         name=mount.command_path[-1],
         params=build_click_params(mount),
         callback=_dynamic_callback(mount),
-        short_help=help_payload["summary"],
-        help=help_payload["description"],
-        epilog=help_payload["epilog"],
+        short_help=help_content["short_help"],
+        help=help_content["help"],
+        epilog=help_content["epilog"],
     )
+
+
+class LazyDynamicCommand(GroupedOptionCommand):
+    def __init__(self, app: CTSApp, mount, *args, **kwargs):
+        super().__init__(*args, params=[], **kwargs)
+        self._app = app
+        self._mount = mount
+        self._loaded = False
+
+    def _ensure_loaded(self) -> None:
+        if self._loaded:
+            return
+        emit_app_event(
+            self._app,
+            event="help_compile_start",
+            source=self._mount.source_name,
+            mount_id=self._mount.mount_id,
+            operation_id=self._mount.operation.id,
+        )
+        help_payload = build_mount_help(self._app, self._mount)
+        emit_app_event(
+            self._app,
+            event="help_compile_complete",
+            source=self._mount.source_name,
+            mount_id=self._mount.mount_id,
+            operation_id=self._mount.operation.id,
+            data={"schema_provenance": help_payload.get("schema_provenance")},
+        )
+        self.params = build_click_params(self._mount)
+        self.help = help_payload["description"]
+        self.epilog = help_payload["epilog"]
+        self.short_help = help_payload["summary"]
+        self._loaded = True
+
+    def get_params(self, ctx: click.Context) -> List[click.Parameter]:
+        self._ensure_loaded()
+        return super().get_params(ctx)
+
+    def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        self._ensure_loaded()
+        super().format_help(ctx, formatter)
 
 
 def _dynamic_callback(mount):
     @click.pass_context
     def callback(ctx, **kwargs):
         try:
-            app = _get_app(ctx)
+            app = _get_app(ctx, mode="full")
         except Exception as exc:
             _fail(ctx, exc, "config_load", _error_output_format(ctx, kwargs.get("output_format")))
             return
-        _run_mount_command(app, mount, kwargs, mode="invoke")
+        runtime_mount = app.catalog.find_by_id(mount.mount_id) or mount
+        _run_mount_command(app, runtime_mount, kwargs, mode="invoke")
 
     return callback
 
@@ -3822,8 +4459,8 @@ def _run_mount_command(app: CTSApp, mount, kwargs: Dict[str, Any], mode: str) ->
         _fail(click.get_current_context(), exc, mode, output_format, mount=mount, run_id=run_id, trace_id=trace_id)
 
 
-def _get_app(ctx: click.Context) -> CTSApp:
-    return _get_state(ctx).get_app()
+def _get_app(ctx: click.Context, mode: str = "auto") -> CTSApp:
+    return _get_state(ctx).get_app(mode=mode)
 
 
 def _get_state(ctx: click.Context) -> CLIState:
@@ -3831,21 +4468,33 @@ def _get_state(ctx: click.Context) -> CLIState:
     if isinstance(root.obj, CLIState):
         return root.obj
 
+    raw = _parse_root_argv(sys.argv[1:])
     config_path = root.params.get("config_path")
     profile = root.params.get("profile")
     global_output = root.params.get("global_output", "text")
     if config_path is None and not root.params:
-        raw = _parse_root_argv(sys.argv[1:])
         config_path = raw.get("config_path")
         profile = raw.get("profile")
         global_output = raw.get("global_output", global_output)
-    root.obj = CLIState(config_path=config_path, profile=profile, global_output=global_output)
+    remaining_tokens = list(getattr(root, "protected_args", []) or []) + list(getattr(root, "args", []) or [])
+    help_requested = any(token in {"-h", "--help"} for token in remaining_tokens)
+    root.obj = CLIState(
+        config_path=config_path,
+        profile=profile,
+        global_output=global_output,
+        help_requested=help_requested or bool(raw.get("help_requested")),
+        requested_command_path=tuple(raw.get("command_path", [])),
+    )
     return root.obj
 
 
 def _parse_root_argv(argv: list[str]) -> Dict[str, Any]:
-    parsed: Dict[str, Any] = {}
+    parsed: Dict[str, Any] = {
+        "help_requested": any(token in {"-h", "--help"} for token in argv),
+        "command_path": [],
+    }
     index = 0
+    command_tokens: List[str] = []
     while index < len(argv):
         token = argv[index]
         if token == "--config" and index + 1 < len(argv):
@@ -3860,8 +4509,359 @@ def _parse_root_argv(argv: list[str]) -> Dict[str, Any]:
             parsed["global_output"] = argv[index + 1]
             index += 2
             continue
+        if token in {"-h", "--help"}:
+            break
+        if token.startswith("-"):
+            index += 1
+            continue
+        command_tokens.append(token)
         index += 1
+    parsed["command_path"] = command_tokens
     return parsed
+
+
+def _resolve_static_mount_for_path(loaded, command_path: tuple[str, ...]):
+    catalog = _build_static_help_catalog(loaded)
+    return catalog.find_by_path(command_path)
+
+
+class StaticHelpCatalog:
+    def __init__(self) -> None:
+        self._path_index: Dict[tuple[str, ...], Any] = {}
+
+    def add_mount(self, mount: Any) -> None:
+        primary_path = tuple(mount.command_path)
+        if primary_path:
+            self._path_index.setdefault(primary_path, mount)
+        for alias in getattr(mount, "aliases", []) or []:
+            alias_path = tuple(alias)
+            if alias_path:
+                self._path_index.setdefault(alias_path, mount)
+
+    def find_by_path(self, path: tuple[str, ...]) -> Any:
+        return self._path_index.get(tuple(path))
+
+    def child_tokens(self, prefix: tuple[str, ...]) -> List[str]:
+        tokens = set()
+        prefix_tuple = tuple(prefix)
+        for path in self._path_index:
+            if len(path) <= len(prefix_tuple):
+                continue
+            if path[: len(prefix_tuple)] == prefix_tuple:
+                tokens.add(path[len(prefix_tuple)])
+        return sorted(tokens)
+
+    def has_group(self, prefix: tuple[str, ...]) -> bool:
+        prefix_tuple = tuple(prefix)
+        for path in self._path_index:
+            if len(path) > len(prefix_tuple) and path[: len(prefix_tuple)] == prefix_tuple:
+                return True
+        return False
+
+    def group_summary(self, prefix: tuple[str, ...]) -> str:
+        return "Dynamic command group for " + " ".join(prefix)
+
+
+@dataclass
+class StaticOperationRecord:
+    id: str
+    source: str
+    provider_type: str
+    title: str
+    stable_name: Optional[str] = None
+    description: Optional[str] = None
+    kind: str = "action"
+    tags: List[str] = field(default_factory=list)
+    group: Optional[str] = None
+    risk: str = "read"
+    input_schema: Dict[str, Any] = field(default_factory=dict)
+    output_schema: Optional[Dict[str, Any]] = None
+    examples: List[Dict[str, Any]] = field(default_factory=list)
+    supported_surfaces: List[str] = field(default_factory=lambda: ["cli", "invoke"])
+    provider_config: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class StaticMountRecord:
+    mount_id: str
+    source_name: str
+    provider_type: str
+    operation: StaticOperationRecord
+    command_path: List[str] = field(default_factory=list)
+    aliases: List[List[str]] = field(default_factory=list)
+    stable_name: str = ""
+    summary: Optional[str] = None
+    description: Optional[str] = None
+    source_config: Any = None
+    mount_config: Any = None
+    generated: bool = False
+    generated_from: Optional[str] = None
+
+
+def _build_static_help_catalog(loaded) -> StaticHelpCatalog:
+    catalog = StaticHelpCatalog()
+    source_operations: Dict[str, Dict[str, Any]] = {}
+    raw_config = loaded.raw or {}
+    raw_sources = raw_config.get("sources") or {}
+    raw_mounts = raw_config.get("mounts") or []
+
+    def get_operations(source_name: str):
+        cached = source_operations.get(source_name)
+        if cached is not None:
+            return cached
+        source = raw_sources.get(source_name)
+        if not isinstance(source, dict) or source.get("enabled", True) is False:
+            result: Dict[str, Any] = {}
+            source_operations[source_name] = result
+            return result
+
+        discovery = source.get("discovery") or {}
+        manifest = discovery.get("manifest") if isinstance(discovery, dict) else None
+        source_type = str(source.get("type") or "")
+        source_defined_operations = source.get("operations") or {}
+        if source_type not in {"cli", "shell", "http", "mcp"} and not manifest and not source_defined_operations:
+            result = {}
+            source_operations[source_name] = result
+            return result
+
+        operations: Dict[str, Any] = {}
+        if manifest:
+            manifest_path = Path(str(manifest)).expanduser()
+            if not manifest_path.is_absolute():
+                origin = (source.get("__origin_file__") if isinstance(source, dict) else None)
+                if origin:
+                    manifest_path = Path(str(origin)).parent / manifest_path
+                else:
+                    manifest_path = loaded.root_paths[-1].parent / manifest_path if loaded.root_paths else Path.cwd() / manifest_path
+            if manifest_path.exists():
+                for operation in _static_manifest_operations_from_data(source_name, source_type, manifest_path):
+                    operations[operation.id] = operation
+
+        if isinstance(source_defined_operations, dict):
+            for operation_id, operation in source_defined_operations.items():
+                if not isinstance(operation, dict):
+                    continue
+                operations[str(operation_id)] = _static_operation_from_config(source_name, source_type, str(operation_id), operation)
+
+        source_operations[source_name] = operations
+        return operations
+
+    for mount in raw_mounts:
+        if not isinstance(mount, dict):
+            continue
+        source_name = str(mount.get("source") or "")
+        if not source_name:
+            continue
+        source = raw_sources.get(source_name)
+        if not isinstance(source, dict) or source.get("enabled", True) is False:
+            continue
+
+        operations = get_operations(source_name)
+        if mount.get("select"):
+            for operation in operations.values():
+                if not _static_operation_matches_select(operation, mount.get("select") or {}):
+                    continue
+                record = _static_build_generated_mount(mount, source, operation)
+                catalog.add_mount(record)
+            continue
+
+        operation_id = str(mount.get("operation") or mount.get("id") or "")
+        if not operation_id:
+            continue
+        operation = operations.get(operation_id) or _static_synthesize_operation(mount, source, operation_id)
+        record = _static_build_mount_record(mount, source, operation, generated=False)
+        catalog.add_mount(record)
+    return catalog
+
+
+def _static_build_generated_mount(mount, source_config, operation) -> StaticMountRecord:
+    command = mount.get("command") or {}
+    command_prefix = list(command.get("under") or command.get("path") or [])
+    if not command_prefix:
+        command_prefix = _static_tokenize_identifier(str(mount.get("id") or "mount"))
+    operation_tokens = _static_tokenize_identifier(operation.id)
+    if command_prefix and operation_tokens and command_prefix[-1] == operation_tokens[0]:
+        operation_tokens = operation_tokens[1:]
+    command_path = command_prefix + operation_tokens
+
+    stable_name = operation.stable_name or f"{mount.get('source')}.{operation.id}".replace("_", ".")
+    return StaticMountRecord(
+        mount_id=f"{mount.get('id')}.{operation.id}",
+        source_name=str(mount.get("source")),
+        provider_type=str(source_config.get("type") or "cli"),
+        operation=operation,
+        command_path=command_path,
+        aliases=[],
+        stable_name=stable_name,
+        summary=operation.title,
+        description=operation.description,
+        source_config=source_config,
+        mount_config=mount,
+        generated=True,
+        generated_from=str(mount.get("id")),
+    )
+
+
+def _static_build_mount_record(mount, source_config, operation, generated: bool) -> StaticMountRecord:
+    command = mount.get("command") or {}
+    command_path = list(command.get("path") or [])
+    if not command_path:
+        command_path = list(command.get("under") or []) + _static_tokenize_identifier(operation.id)
+    if not command_path:
+        command_path = _static_tokenize_identifier(str(mount.get("id") or "mount"))
+
+    machine = mount.get("machine") or {}
+    help_config = mount.get("help") or {}
+    stable_name = machine.get("stable_name") or operation.stable_name or f"{mount.get('source')}.{operation.id}".replace("_", ".")
+    return StaticMountRecord(
+        mount_id=str(mount.get("id")),
+        source_name=str(mount.get("source")),
+        provider_type=str(source_config.get("type") or "cli"),
+        operation=operation,
+        command_path=command_path,
+        aliases=[list(alias) for alias in (command.get("aliases") or []) if isinstance(alias, list)],
+        stable_name=stable_name,
+        summary=help_config.get("summary") or operation.title,
+        description=help_config.get("description") or operation.description,
+        source_config=source_config,
+        mount_config=mount,
+        generated=generated,
+    )
+
+
+def _static_synthesize_operation(mount, source_config, operation_id: str) -> StaticOperationRecord:
+    help_config = mount.get("help") or {}
+    machine = mount.get("machine") or {}
+    policy = mount.get("policy") or {}
+    return StaticOperationRecord(
+        id=operation_id,
+        source=str(mount.get("source")),
+        provider_type=str(source_config.get("type") or "cli"),
+        title=help_config.get("summary") or operation_id,
+        stable_name=machine.get("stable_name"),
+        description=help_config.get("description"),
+        kind="action",
+        risk=policy.get("risk", "read"),
+        input_schema=_static_schema_from_mount_params(mount.get("params") or {}),
+        examples=[{"cli": example} for example in (help_config.get("examples") or [])],
+        supported_surfaces=list(machine.get("expose_via") or source_config.get("expose_to_surfaces") or ["cli", "invoke"]),
+    )
+
+
+def _static_schema_from_mount_params(params) -> Dict[str, Any]:
+    properties: Dict[str, Any] = {}
+    required: List[str] = []
+    for name, param in params.items():
+        if not isinstance(param, dict):
+            continue
+        param_type = str(param.get("type") or "string")
+        if param_type == "array":
+            schema = {"type": "array", "items": {"type": "string"}}
+        else:
+            schema = {"type": _static_normalize_schema_type(param_type)}
+        if param.get("help"):
+            schema["description"] = param.get("help")
+        if param.get("default") is not None:
+            schema["default"] = param.get("default")
+        if param.get("enum"):
+            schema["enum"] = list(param.get("enum") or [])
+        if param.get("required"):
+            required.append(name)
+        properties[name] = schema
+    return {"type": "object", "properties": properties, "required": required}
+
+
+def _static_normalize_schema_type(param_type: str) -> str:
+    mapping = {
+        "str": "string",
+        "string": "string",
+        "int": "integer",
+        "integer": "integer",
+        "number": "number",
+        "float": "number",
+        "bool": "boolean",
+        "boolean": "boolean",
+        "object": "object",
+        "array": "array",
+    }
+    return mapping.get(param_type, "string")
+
+
+def _static_tokenize_identifier(value: str) -> List[str]:
+    parts = [segment for segment in re.split(r"[_./:\-]+", value) if segment]
+    return [part.lower() for part in parts] or [value]
+
+
+def _static_operation_matches_select(operation, select: Dict[str, Any]) -> bool:
+    includes = list(select.get("include", []))
+    excludes = list(select.get("exclude", []))
+    tags = set(select.get("tags", []))
+
+    haystacks = [operation.id, operation.stable_name or ""] + list(operation.tags)
+    if includes and not any(any(fnmatch.fnmatch(item, pattern) for item in haystacks) for pattern in includes):
+        return False
+    if excludes and any(any(fnmatch.fnmatch(item, pattern) for item in haystacks) for pattern in excludes):
+        return False
+    if tags and not tags.intersection(set(operation.tags)):
+        return False
+    return True
+
+
+def _static_manifest_operations_from_data(source_name: str, provider_type: str, manifest_path: Path) -> List[StaticOperationRecord]:
+    raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        return []
+    operations = []
+    for item in raw.get("operations", []):
+        if not isinstance(item, dict) or "id" not in item:
+            continue
+        operation_id = str(item["id"])
+        operations.append(
+            StaticOperationRecord(
+                id=operation_id,
+                source=source_name,
+                provider_type=provider_type,
+                title=item.get("title") or operation_id,
+                stable_name=item.get("stable_name"),
+                description=item.get("description"),
+                kind=item.get("kind", "action"),
+                tags=list(item.get("tags", [])),
+                group=item.get("group"),
+                risk=item.get("risk", "read"),
+                input_schema=dict(item.get("input_schema") or {}),
+                output_schema=item.get("output_schema"),
+                examples=list(item.get("examples", [])),
+                supported_surfaces=list(item.get("supported_surfaces", ["cli", "invoke"])),
+                provider_config=dict(item),
+            )
+        )
+    return operations
+
+
+def _static_operation_from_config(
+    source_name: str,
+    provider_type: str,
+    operation_id: str,
+    operation: Dict[str, Any],
+) -> StaticOperationRecord:
+    provider_config = dict(operation.get("provider_config") or {})
+    return StaticOperationRecord(
+        id=operation_id,
+        source=source_name,
+        provider_type=provider_type,
+        title=operation.get("title") or operation_id,
+        stable_name=provider_config.get("stable_name"),
+        description=operation.get("description"),
+        kind=operation.get("kind", "action"),
+        tags=list(operation.get("tags", [])),
+        group=operation.get("group"),
+        risk=operation.get("risk", "read"),
+        input_schema=dict(operation.get("input_schema") or {}),
+        output_schema=operation.get("output_schema"),
+        examples=list(operation.get("examples", [])),
+        supported_surfaces=list(operation.get("supported_surfaces", ["cli", "invoke"])),
+        provider_config=provider_config,
+    )
 
 
 def _prepare_cli_import_plan(
@@ -4207,7 +5207,14 @@ def _relative_cli_tokens(command_argv: List[str]) -> List[str]:
     candidates = [token for token in command_argv if token and not token.startswith("-")]
     if len(candidates) <= 1:
         return []
+    if len(candidates) >= 3 and _looks_like_script_path(candidates[1]):
+        return list(candidates[2:])
     return list(candidates[1:])
+
+
+def _looks_like_script_path(token: str) -> bool:
+    suffix = Path(token).suffix.lower()
+    return suffix in {".py", ".sh", ".js", ".mjs", ".cjs", ".ts"}
 
 
 def _relative_cli_tokens_from_base(command_argv: List[str], base_command_argv: List[str]) -> List[str]:
@@ -4226,7 +5233,7 @@ def _apply_cli_import_plan(payload: Dict[str, Any], plan: Dict[str, Any]) -> Non
         source_payload = {"type": source_plan["type"], "enabled": True}
         sources[source_name] = source_payload
     if not isinstance(source_payload, dict):
-        raise ConfigEditError(f"source payload must be a mapping: {source_name}")
+        raise _config_edit_error(f"source payload must be a mapping: {source_name}")
 
     source_payload.setdefault("type", source_plan["type"])
     if source_plan.get("executable"):
@@ -4260,7 +5267,7 @@ def _apply_cli_import_tree_plan(payload: Dict[str, Any], plan: Dict[str, Any]) -
         source_payload = {"type": source_plan["type"], "enabled": True}
         sources[source_name] = source_payload
     if not isinstance(source_payload, dict):
-        raise ConfigEditError(f"source payload must be a mapping: {source_name}")
+        raise _config_edit_error(f"source payload must be a mapping: {source_name}")
 
     source_payload.setdefault("type", source_plan["type"])
     if source_plan.get("executable"):
@@ -4341,7 +5348,7 @@ def _parse_param_spec(spec: str) -> tuple[str, str]:
     name = name.strip()
     param_type = param_type.strip() or "string"
     if not name:
-        raise ConfigEditError(f"param 不能为空: {spec}")
+        raise _config_edit_error(f"param 不能为空: {spec}")
     return name, param_type
 
 
@@ -4373,6 +5380,31 @@ def _error_output_format(ctx: click.Context, requested_output: Optional[str]) ->
     return _get_state(ctx).global_output
 
 
+@contextmanager
+def _status(output_format: str, message: str):
+    if output_format == "json" or not bool(getattr(sys.stderr, "isatty", lambda: False)()):
+        yield
+        return
+    try:
+        from rich.console import Console
+    except ModuleNotFoundError:
+        click.echo(message, err=True)
+        yield
+        return
+    console = Console(stderr=True)
+    with console.status(message):
+        yield
+
+
+def _maybe_confirm(message: str, *, assume_yes: bool, output_format: str) -> None:
+    if assume_yes or output_format == "json":
+        return
+    if not bool(getattr(sys.stdin, "isatty", lambda: False)()):
+        return
+    if not click.confirm(message, default=False):
+        raise click.Abort()
+
+
 def _build_error_command(name: str, exc: Exception) -> click.Command:
     @click.pass_context
     def callback(ctx: click.Context) -> None:
@@ -4401,3 +5433,8 @@ def _fail(
     payload = build_error_envelope(exc, stage, mount=mount, run_id=run_id, trace_id=trace_id)
     click.echo(render_payload(payload, output_format))
     ctx.exit(exit_code_for_exception(exc, stage))
+
+
+for _command_name, _command in manage.commands.items():
+    if _command_name not in main.commands:
+        main.add_command(_command, name=_command_name)

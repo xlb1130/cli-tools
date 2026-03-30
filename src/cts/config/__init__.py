@@ -1,5 +1,10 @@
-from cts.config.loader import LoadedConfig, load_config
-from cts.config.models import CTSConfig
+from __future__ import annotations
 
-__all__ = ["CTSConfig", "LoadedConfig", "load_config"]
+from typing import TYPE_CHECKING
 
+from cts.config.loader import LoadedConfig, LoadedRawConfig, load_config, load_raw_config
+
+if TYPE_CHECKING:
+    from cts.config.models import CTSConfig
+
+__all__ = ["CTSConfig", "LoadedConfig", "LoadedRawConfig", "load_config", "load_raw_config"]

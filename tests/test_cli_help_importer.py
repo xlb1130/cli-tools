@@ -4,6 +4,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
+import cts.cli.root as root_module
 from cts.app import build_app
 from cts.cli.root import main
 
@@ -166,6 +167,138 @@ mounts:
     assert "--name" in argv and "Alice" in argv
     assert "--count" in argv and "2" in argv
     assert "--verbose" in argv
+
+
+def test_imported_cli_leaf_help_uses_static_direct_path(tmp_path: Path, monkeypatch):
+    script_path = tmp_path / "demo_cli.py"
+    script_path.write_text(CLI_SCRIPT, encoding="utf-8")
+    manifest_path = tmp_path / "demo-manifest.yaml"
+    config_path = tmp_path / "cts.yaml"
+    config_path.write_text(
+        f"""
+version: 1
+sources:
+  demo_cli:
+    type: cli
+    executable: {sys.executable}
+    discovery:
+      manifest: {manifest_path}
+mounts:
+  - id: demo
+    source: demo_cli
+    select:
+      include: ["*"]
+    command:
+      under: [demo]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    import_result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "manage",
+            "source",
+            "import-help",
+            "demo_cli",
+            "greet",
+            str(script_path),
+            "greet",
+            "--format",
+            "json",
+        ],
+    )
+    assert import_result.exit_code == 0
+
+    def fail_build_app(*args, **kwargs):
+        raise AssertionError("leaf --help should not build the full app")
+
+    monkeypatch.setattr(root_module, "build_app", fail_build_app)
+    monkeypatch.setattr(
+        root_module,
+        "_parse_root_argv",
+        lambda argv: {
+            "help_requested": True,
+            "command_path": ["demo", "greet"],
+            "config_path": config_path,
+            "profile": None,
+            "global_output": "text",
+        },
+    )
+
+    help_result = runner.invoke(main, ["--config", str(config_path), "demo", "greet", "--help"])
+    assert help_result.exit_code == 0
+    assert "--name TEXT" in help_result.output
+
+
+def test_imported_cli_group_help_uses_static_catalog_without_building_app(tmp_path: Path, monkeypatch):
+    script_path = tmp_path / "demo_cli.py"
+    script_path.write_text(CLI_SCRIPT, encoding="utf-8")
+    manifest_path = tmp_path / "demo-manifest.yaml"
+    config_path = tmp_path / "cts.yaml"
+    config_path.write_text(
+        f"""
+version: 1
+sources:
+  demo_cli:
+    type: cli
+    executable: {sys.executable}
+    discovery:
+      manifest: {manifest_path}
+mounts:
+  - id: demo
+    source: demo_cli
+    select:
+      include: ["*"]
+    command:
+      under: [demo]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    import_result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "manage",
+            "source",
+            "import-help",
+            "demo_cli",
+            "greet",
+            str(script_path),
+            "greet",
+            "--format",
+            "json",
+        ],
+    )
+    assert import_result.exit_code == 0
+
+    def fail_build_app(*args, **kwargs):
+        raise AssertionError("group --help should not build the full app")
+
+    monkeypatch.setattr(root_module, "build_app", fail_build_app)
+    monkeypatch.setattr(
+        root_module,
+        "_parse_root_argv",
+        lambda argv: {
+            "help_requested": True,
+            "command_path": ["demo"],
+            "config_path": config_path,
+            "profile": None,
+            "global_output": "text",
+        },
+    )
+
+    help_result = runner.invoke(main, ["--config", str(config_path), "demo", "--help"])
+    assert help_result.exit_code == 0
+    assert "greet" in help_result.output
 
 
 CLI_TREE_SCRIPT = """

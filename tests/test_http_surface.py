@@ -1,6 +1,7 @@
 from pathlib import Path
 from threading import Thread
 import json
+import time
 
 import httpx
 from click.testing import CliRunner
@@ -334,6 +335,73 @@ mounts:
         assert catalog_payload["drift_summary"]["severity"] == "additive"
         assert catalog_payload["mounts"][0]["drift_state"]["status"] == "accepted"
         assert catalog_payload["mounts"][0]["drift_state"]["action"] == "auto_accept"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_http_surface_auto_reloads_when_config_changes(tmp_path: Path):
+    config_path = tmp_path / "cts.yaml"
+    config_path.write_text(
+        """version: 1
+sources:
+  demo:
+    type: shell
+    description: before
+    operations:
+      run:
+        title: Run
+        input_schema:
+          type: object
+mounts:
+  - id: demo-run
+    source: demo
+    operation: run
+    command:
+      path: [demo, run]
+""",
+        encoding="utf-8",
+    )
+
+    app = build_app(str(config_path))
+    server = create_http_server(app, host="127.0.0.1", port=0)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        host, port = server.server_address
+        base_url = f"http://{host}:{port}"
+
+        before = httpx.get(f"{base_url}/api/sources/demo", timeout=5.0)
+        assert before.status_code == 200
+        assert before.json()["description"] == "before"
+
+        time.sleep(0.02)
+        config_path.write_text(
+            """version: 1
+sources:
+  demo:
+    type: shell
+    description: after
+    operations:
+      run:
+        title: Run
+        input_schema:
+          type: object
+mounts:
+  - id: demo-run
+    source: demo
+    operation: run
+    command:
+      path: [demo, run]
+""",
+            encoding="utf-8",
+        )
+
+        after = httpx.get(f"{base_url}/api/sources/demo", timeout=5.0)
+        assert after.status_code == 200
+        assert after.json()["description"] == "after"
     finally:
         server.shutdown()
         server.server_close()

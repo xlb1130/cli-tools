@@ -1,7 +1,10 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from click.testing import CliRunner
+
 from cts.app import build_app
+from cts.cli.root import main
 from cts.providers import mcp_cli
 
 
@@ -115,3 +118,74 @@ mounts:
     assert "demo.crawl_webpage" in mounts
     assert mounts["demo.bing_search"].command_path == ["demo", "bing", "search"]
     assert mounts["demo.crawl_webpage"].command_path == ["demo", "crawl", "webpage"]
+
+
+def test_mcp_help_uses_manifest_without_live_discovery(tmp_path: Path, monkeypatch):
+    manifest_path = tmp_path / "mcp-manifest.json"
+    config_path = tmp_path / "cts.yaml"
+    manifest_path.write_text(
+        """
+{
+  "version": 1,
+  "operations": [
+    {
+      "id": "bing_search",
+      "title": "Bing Search",
+      "description": "Search from imported MCP manifest",
+      "risk": "read",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "Search query"}
+        },
+        "required": ["query"]
+      },
+      "provider_config": {
+        "mcp_primitive_type": "tool",
+        "discovered_origin": "demo"
+      }
+    }
+  ]
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    config_path.write_text(
+        f"""
+version: 1
+sources:
+  remote_mcp:
+    type: mcp
+    config_file: ./servers.json
+    server: demo
+    discovery:
+      mode: live
+      manifest: {manifest_path}
+mounts:
+  - id: demo
+    source: remote_mcp
+    select:
+      include: ["*"]
+    command:
+      under: [demo]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    calls = {"count": 0}
+
+    def fail_bridge(*args, **kwargs):
+        calls["count"] += 1
+        raise AssertionError("live MCP discovery should not run for --help when manifest data exists")
+
+    monkeypatch.setattr(mcp_cli, "_run_bridge_command", fail_bridge)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["--config", str(config_path), "demo", "bing", "search", "--help"])
+
+    assert result.exit_code == 0
+    assert calls["count"] == 0
+    assert "Search from imported MCP manifest" in result.output
+    assert "--query TEXT" in result.output

@@ -4,6 +4,8 @@ import json
 import uuid
 from typing import Any, Dict
 
+from cts.execution.formatter import render_text_payload
+
 from jsonschema import Draft202012Validator
 
 from cts.execution.errors import classify_exception
@@ -240,106 +242,7 @@ def apply_schema_defaults(schema: Dict[str, Any], args: Dict[str, Any]) -> Dict[
 def render_payload(payload: Dict[str, Any], output_format: str) -> str:
     if output_format == "json":
         return json.dumps(payload, ensure_ascii=False, indent=2)
-
-    if payload.get("ok") is False and "error" in payload:
-        error = payload["error"]
-        lines = [f"Error [{error['type']}]: {error['message']}"]
-        if error.get("suggestions"):
-            lines.extend(f"- {item}" for item in error["suggestions"])
-        return "\n".join(lines)
-
-    if "mounts" in payload:
-        return "\n".join(
-            f"{item['mount_id']}: {' '.join(item['command_path'])} ({item['provider_type']})"
-            for item in payload["mounts"]
-        )
-
-    if "errors" in payload and "warnings" in payload:
-        lines = ["Config lint: OK" if payload.get("ok") else "Config lint: FAILED"]
-        if payload.get("loaded_paths"):
-            lines.append("Loaded files:")
-            lines.extend(f"- {item}" for item in payload["loaded_paths"])
-        if payload.get("warnings"):
-            lines.append("Warnings:")
-            lines.extend(f"- {item['code']}: {item['message']}" for item in payload["warnings"])
-        if payload.get("errors"):
-            lines.append("Errors:")
-            lines.extend(f"- {item['code']}: {item['message']}" for item in payload["errors"])
-        return "\n".join(lines)
-
-    if "items" in payload:
-        if payload["items"] and isinstance(payload["items"][0], dict) and payload["items"][0].get("run_id"):
-            return "\n".join(
-                f"{item['run_id']} {item.get('mode')} ok={item.get('ok')} mount={item.get('mount_id') or '-'}"
-                for item in payload["items"]
-            )
-        if payload["items"] and isinstance(payload["items"][0], dict) and payload["items"][0].get("source"):
-            lines = []
-            for item in payload["items"]:
-                line = (
-                    f"{item.get('source')} ({item.get('provider_type')}) "
-                    f"ok={item.get('ok')} usable={item.get('usable')} operations={item.get('operation_count')}"
-                )
-                if item.get("drift") and item["drift"].get("changed"):
-                    line += f" drift={item['drift'].get('severity')}"
-                if item.get("fallback"):
-                    line += f" fallback={item['fallback']}"
-                if item.get("error"):
-                    line += f" error={item['error']}"
-                lines.append(line)
-            if payload.get("report_path"):
-                lines.append(f"report={payload['report_path']}")
-            if payload.get("capability_snapshot_path"):
-                lines.append(f"capability_snapshot={payload['capability_snapshot_path']}")
-            return "\n".join(lines)
-        return "\n".join(json.dumps(item, ensure_ascii=False) for item in payload["items"])
-
-    if payload.get("mount_id") and payload.get("command_path"):
-        return "\n".join(
-            [
-                f"{payload['mount_id']}: {' '.join(payload['command_path'])}",
-                f"source={payload['source']} provider={payload['provider_type']} risk={payload['risk']}",
-                f"stable_name={payload['stable_name']}",
-            ]
-        )
-
-    if payload.get("name") and payload.get("compiled_operation_count") is not None:
-        return "\n".join(
-            [
-                f"{payload['name']} ({payload['type']})",
-                f"operations={payload['compiled_operation_count']} enabled={payload['enabled']}",
-                f"origin={payload.get('origin_file') or '<unknown>'}",
-            ]
-        )
-
-    if payload.get("source") and payload.get("provider_type") and "operation_count" in payload:
-        lines = [
-            f"{payload['source']} ({payload['provider_type']})",
-            f"ok={payload['ok']} operations={payload['operation_count']}",
-        ]
-        if payload.get("discovery"):
-            lines.append(
-                "discovery="
-                + str(payload["discovery"].get("ok"))
-                + f" count={payload['discovery'].get('operation_count', 0)}"
-            )
-        return "\n".join(lines)
-
-    if payload.get("run_id") and payload.get("mode"):
-        lines = [
-            f"run_id={payload['run_id']}",
-            f"mode={payload['mode']} ok={payload.get('ok')} exit_code={payload.get('exit_code')}",
-            f"mount={payload.get('mount_id') or '-'} source={payload.get('source') or '-'}",
-        ]
-        return "\n".join(lines)
-
-    if payload.get("text"):
-        return str(payload["text"])
-
-    if payload.get("data") is not None:
-        return json.dumps(payload["data"], ensure_ascii=False, indent=2)
-
-    return json.dumps(payload, ensure_ascii=False, indent=2)
+    return render_text_payload(payload)
 
 
 def _build_request(mount: MountRecord, args: Dict[str, Any], runtime: Dict[str, Any]):

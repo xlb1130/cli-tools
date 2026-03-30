@@ -6,11 +6,12 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 import yaml
 
-from cts.config.models import CTSConfig
+if TYPE_CHECKING:
+    from cts.config.models import CTSConfig
 
 APPEND_LIST_KEYS = {"mounts", "aliases", "hooks", "workflows"}
 SUPPORTED_CONFIG_SUFFIXES = {".yaml", ".yml", ".json"}
@@ -21,6 +22,13 @@ class LoadedConfig:
     config: CTSConfig
     paths: List[Path]
     raw: Dict[str, Any] = field(default_factory=dict)
+    root_paths: List[Path] = field(default_factory=list)
+
+
+@dataclass
+class LoadedRawConfig:
+    raw: Dict[str, Any]
+    paths: List[Path]
     root_paths: List[Path] = field(default_factory=list)
 
 
@@ -110,6 +118,7 @@ def _resolve_paths(explicit_path: Optional[str]) -> List[Path]:
 
 def load_config(explicit_path: Optional[str] = None) -> LoadedConfig:
     from cts.execution.logging import emit_config_event
+    from cts.config.models import CTSConfig
     
     emit_config_event(
         event="config.load_start",
@@ -148,6 +157,21 @@ def load_config(explicit_path: Optional[str] = None) -> LoadedConfig:
     )
     
     return LoadedConfig(config=config, paths=loaded_paths, raw=merged, root_paths=root_paths)
+
+
+def load_raw_config(explicit_path: Optional[str] = None) -> LoadedRawConfig:
+    root_paths = _resolve_paths(explicit_path)
+    if not root_paths:
+        return LoadedRawConfig(raw={}, paths=[], root_paths=[])
+
+    merged: Dict[str, Any] = {}
+    loaded_paths: List[Path] = []
+    seen: Set[Path] = set()
+
+    for path in root_paths:
+        merged = deep_merge(merged, _load_file_tree(path, loaded_paths, seen, stack=[]))
+
+    return LoadedRawConfig(raw=merged, paths=loaded_paths, root_paths=root_paths)
 
 
 def _load_file_tree(path: Path, loaded_paths: List[Path], seen: Set[Path], stack: List[Path]) -> Dict[str, Any]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import uuid
@@ -7,6 +8,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import RLock
 from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -48,14 +50,50 @@ class CTSHTTPServer(ThreadingHTTPServer):
         super().__init__(server_address, RequestHandlerClass)
         self.app = app
         self.ui_dir = ui_dir
+        self._app_lock = RLock()
+        self._config_fingerprint = self._build_config_fingerprint(app)
 
     def reload_app(self) -> Any:
-        config_path = self.app.explicit_config_path
-        profile = self.app.requested_profile
-        next_app = build_app(config_path, profile=profile)
-        self.app = next_app
-        emit_app_event(next_app, event="surface_reload_complete", data={"surface": "http"})
-        return next_app
+        with self._app_lock:
+            config_path = self.app.explicit_config_path
+            profile = self.app.requested_profile
+            next_app = build_app(config_path, profile=profile)
+            self.app = next_app
+            self._config_fingerprint = self._build_config_fingerprint(next_app)
+            emit_app_event(next_app, event="surface_reload_complete", data={"surface": "http"})
+            return next_app
+
+    def maybe_reload_app(self) -> Any:
+        with self._app_lock:
+            current_fingerprint = self._build_config_fingerprint(self.app)
+            if current_fingerprint != self._config_fingerprint:
+                config_path = self.app.explicit_config_path
+                profile = self.app.requested_profile
+                next_app = build_app(config_path, profile=profile)
+                self.app = next_app
+                self._config_fingerprint = self._build_config_fingerprint(next_app)
+                emit_app_event(
+                    next_app,
+                    event="surface_reload_complete",
+                    data={"surface": "http", "trigger": "config_change"},
+                )
+            return self.app
+
+    @staticmethod
+    def _build_config_fingerprint(app) -> tuple[tuple[str, Optional[str]], ...]:
+        paths = []
+        seen: set[Path] = set()
+        for path in [*app.loaded_config.root_paths, *app.config_paths]:
+            resolved = path.expanduser().resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            try:
+                digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+                paths.append((str(resolved), digest))
+            except FileNotFoundError:
+                paths.append((str(resolved), None))
+        return tuple(sorted(paths))
 
 
 def create_http_server(app, host: str = "127.0.0.1", port: int = 8787, ui_dir: Optional[Path] = None) -> CTSHTTPServer:
@@ -151,7 +189,7 @@ class CTSHTTPRequestHandler(BaseHTTPRequestHandler):
         return None
 
     def _route_get(self, path: str, query: Dict[str, list[str]]) -> Dict[str, Any]:
-        app = self.server.app
+        app = self.server.maybe_reload_app()
 
         if path in {"/healthz", "/api/healthz"}:
             return {"ok": True}
@@ -366,7 +404,7 @@ class CTSHTTPRequestHandler(BaseHTTPRequestHandler):
         raise KeyError(f"route not found: {path}")
 
     def _route_post(self, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        app = self.server.app
+        app = self.server.maybe_reload_app()
 
         if path == "/api/reload":
             next_app = self.server.reload_app()

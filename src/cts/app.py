@@ -153,12 +153,14 @@ class CTSApp:
         active_profile: Optional[str] = None,
         explicit_config_path: Optional[str] = None,
         requested_profile: Optional[str] = None,
+        compile_mode: str = "full",
     ) -> None:
         self.loaded_config = loaded_config
         self.config = loaded_config.config
         self.active_profile = active_profile or self.config.app.default_profile
         self.explicit_config_path = explicit_config_path
         self.requested_profile = requested_profile
+        self.compile_mode = compile_mode
         self.plugin_manager = PluginManager(loaded_config)
         self.provider_registry = ProviderRegistry()
         self.plugin_manager.register_providers(self.provider_registry)
@@ -367,15 +369,16 @@ class CTSApp:
         )
 
     def _compile(self) -> None:
-        self._discover_source_operations()
+        discovery_mode = "help" if self.compile_mode == "help" else "compile"
+        self._discover_source_operations(mode=discovery_mode)
         self._compile_mounts()
         self._compile_aliases()
 
-    def _discover_source_operations(self) -> None:
+    def _discover_source_operations(self, *, mode: str = "compile") -> None:
         for source_name, source_config in self.config.sources.items():
             if not source_config.enabled:
                 continue
-            self._discover_source(source_name, source_config, mode="compile")
+            self._discover_source(source_name, source_config, mode=mode)
 
     def _compile_mounts(self) -> None:
         for mount in self.config.mounts:
@@ -1015,6 +1018,10 @@ class CTSApp:
         mode: str,
         cached: Optional[Dict[str, Any]],
     ) -> Optional[Dict[str, Any]]:
+        if mode == "help":
+            if cached:
+                return {"reason": "help_cached_snapshot"}
+            return None
         discovery_mode = str(source_config.discovery.mode or "manual").lower()
         if mode == "sync":
             return None
@@ -1319,12 +1326,18 @@ def _merge_drift_changes(existing: List[Dict[str, Any]], incoming: List[Dict[str
     return list(merged.values())
 
 
-def build_app(config_path: Optional[str] = None, profile: Optional[str] = None) -> CTSApp:
+def build_app(
+    config_path: Optional[str] = None,
+    profile: Optional[str] = None,
+    *,
+    compile_mode: str = "full",
+) -> CTSApp:
     return CTSApp(
         load_config(config_path),
         active_profile=profile,
         explicit_config_path=config_path,
         requested_profile=profile,
+        compile_mode=compile_mode,
     )
 
 

@@ -5,10 +5,7 @@ from json import JSONDecodeError
 from subprocess import TimeoutExpired
 from typing import Any, Dict, List, Optional
 
-import httpx
 import yaml
-
-from cts.providers.base import ProviderError
 
 
 class CTSStructuredError(RuntimeError):
@@ -132,7 +129,7 @@ def classify_exception(exc: Exception, stage: str) -> ErrorClassification:
             ],
         )
 
-    if isinstance(exc, (TimeoutExpired, httpx.TimeoutException)):
+    if isinstance(exc, (TimeoutExpired, _httpx_timeout_exception_type())):
         return ErrorClassification(
             type="TimeoutError",
             code="timeout",
@@ -146,7 +143,7 @@ def classify_exception(exc: Exception, stage: str) -> ErrorClassification:
             ],
         )
 
-    if isinstance(exc, ProviderError):
+    if isinstance(exc, _provider_error_type()):
         message = str(exc)
         if message.startswith("input validation failed:"):
             return ErrorClassification(
@@ -199,3 +196,15 @@ def _default_suggestions(exc: Exception, stage: str) -> List[str]:
     if stage.startswith("inspect") or stage.startswith("show"):
         return ["检查资源 id/name 是否正确，可先执行 list 命令确认。"]
     return ["查看结构化错误详情进一步排查。"]
+
+
+def _httpx_timeout_exception_type():
+    import httpx
+
+    return httpx.TimeoutException
+
+
+def _provider_error_type():
+    from cts.providers.base import ProviderError
+
+    return ProviderError

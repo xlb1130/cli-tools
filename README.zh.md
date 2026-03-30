@@ -30,6 +30,26 @@
 - [Plugin](docs/usage/10-plugins/README.md)
 - [Hook](docs/usage/11-hooks/README.md)
 
+## 安装
+
+```bash
+pip install cts
+```
+
+从 wheel 文件安装：
+
+```bash
+python3 -m pip install ./dist/cts-0.1.0-py3-none-any.whl
+```
+
+从源码安装：
+
+```bash
+git clone https://github.com/xlb1130/cli-tools.git
+cd cli-tools
+pip install -e .
+```
+
 ## 第一步：先跑通一个本地 shell 命令
 
 这是最快的起点，因为不依赖外部服务，也不需要你手写配置文件。
@@ -155,31 +175,23 @@ source -> operation -> mount -> surface
 ## 常用命令
 
 ```bash
+# 查看 source 详情
 cts manage source show <source> --format json
+
+# 测试并发现操作
 cts manage source test <source> --discover --format json
+
+# 列出所有 mount
 cts manage mount list --format json
+
+# 删除 source
+cts manage source remove <source_name> --force --format json
+
+# 调用 mount
 cts manage invoke <mount-id> --input-json '{"key":"value"}' --format json
+
+# 解释 mount
 cts explain <mount-id> --input-json '{"key":"value"}'
-```
-
-## 安装
-
-```bash
-pip install cts
-```
-
-从 wheel 文件安装：
-
-```bash
-python3 -m pip install ./dist/cts-0.1.0-py3-none-any.whl
-```
-
-从源码安装：
-
-```bash
-git clone https://github.com/xlb1130/cli-tools.git
-cd cli-tools
-pip install -e .
 ```
 
 ## 开发

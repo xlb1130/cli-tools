@@ -8,6 +8,7 @@ import { LoadingState } from "../components/LoadingState";
 import { Panel } from "../components/Panel";
 import { PageTitle } from "../components/PageTitle";
 import { SurfacePills } from "../components/SurfacePills";
+import { TablePagination } from "../components/TablePagination";
 import { useRemoveSource, useSource, useTestSource } from "../lib/api";
 import { formatDate, formatList } from "../lib/format";
 
@@ -19,6 +20,8 @@ export function SourceDetailPage() {
   const removeSourceMutation = useRemoveSource();
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   if (sourceQuery.isLoading) {
     return <LoadingState label="加载 source 详情" />;
@@ -200,16 +203,28 @@ export function SourceDetailPage() {
 
         <Panel title="Operations" subtitle="当前 source 编译出的 operation 列表" kicker="Compiled Surface">
           <div className="table-like">
-            {source.operation_ids.map((operationId) => (
-              <div key={operationId} className="row-card row-card-rich">
-                <div>
-                  <strong>{operationId}</strong>
-                  <p>{source.name}</p>
+            {source.operation_ids
+              .slice((currentPage - 1) * pageSize, currentPage * pageSize)
+              .map((operationId) => (
+                <div key={operationId} className="row-card row-card-rich">
+                  <div>
+                    <strong>{operationId}</strong>
+                    <p>{source.name}</p>
+                  </div>
+                  <span className="badge badge-neutral">operation</span>
                 </div>
-                <span className="badge badge-neutral">operation</span>
-              </div>
-            ))}
+              ))}
           </div>
+          <TablePagination
+            currentPage={currentPage}
+            pageSize={pageSize}
+            totalItems={source.operation_ids.length}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
         </Panel>
       </div>
 

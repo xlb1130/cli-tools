@@ -17,13 +17,15 @@ class MCPCLIProvider:
 
     def discover(self, source_name: str, source_config: SourceConfig, app: "CTSApp") -> List[OperationDescriptor]:
         operations: List[OperationDescriptor] = []
+        manifest_loaded = False
 
         if source_config.discovery.manifest:
             manifest = app.resolve_path(source_config.discovery.manifest, owner=source_config)
             if manifest.exists():
                 operations.extend(manifest_operations_from_data(source_name, self.provider_type, load_manifest(manifest)))
+                manifest_loaded = True
 
-        if _should_use_live_discovery(source_config):
+        if _should_use_live_discovery(source_config) and not manifest_loaded and getattr(app, "compile_mode", "full") != "help":
             try:
                 payload = _run_bridge_command(
                     source_config,

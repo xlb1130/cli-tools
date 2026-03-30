@@ -30,6 +30,26 @@ Useful entry points:
 - [Plugins](docs/usage/10-plugins/README.md)
 - [Hooks](docs/usage/11-hooks/README.md)
 
+## Install
+
+```bash
+pip install cts
+```
+
+From a wheel file:
+
+```bash
+python3 -m pip install ./dist/cts-0.1.0-py3-none-any.whl
+```
+
+From source:
+
+```bash
+git clone https://github.com/xlb1130/cli-tools.git
+cd cli-tools
+pip install -e .
+```
+
 ## Start With A One-Line Shell Import
 
 This is the fastest starting point because it does not depend on external services or a config file you write by hand.
@@ -155,31 +175,23 @@ source -> operation -> mount -> surface
 ## Common Commands
 
 ```bash
+# View source details
 cts manage source show <source> --format json
+
+# Test and discover operations
 cts manage source test <source> --discover --format json
+
+# List mounts
 cts manage mount list --format json
+
+# Remove a source
+cts manage source remove <source_name> --force --format json
+
+# Invoke a mount
 cts manage invoke <mount-id> --input-json '{"key":"value"}' --format json
+
+# Explain a mount
 cts explain <mount-id> --input-json '{"key":"value"}'
-```
-
-## Install
-
-```bash
-pip install cts
-```
-
-From a wheel file:
-
-```bash
-python3 -m pip install ./dist/cts-0.1.0-py3-none-any.whl
-```
-
-From source:
-
-```bash
-git clone https://github.com/xlb1130/cli-tools.git
-cd cli-tools
-pip install -e .
 ```
 
 ## Development
