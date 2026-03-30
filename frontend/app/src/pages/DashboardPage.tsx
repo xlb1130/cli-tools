@@ -55,48 +55,31 @@ export function DashboardPage() {
 
   return (
     <div className="page-stack">
-      <section className="hero">
-        <div>
-          <PageTitle
-            icon="dashboard"
-            eyebrow="Overview"
-            title="统一能力平面的当前快照"
-            description="这里聚合的是运行时已经编译后的结果。对人类是命令目录，对 AI 是稳定的 machine entry 和 schema 视图。"
-          />
-          {actionMessage ? <div className="inline-note">{actionMessage}</div> : null}
-        </div>
-        <div className="hero-actions">
-          <div className="hero-summary-grid">
-            <article className="hero-summary-card">
-              <span>Profile</span>
-              <strong>{summary.profile || "default"}</strong>
-            </article>
-            <article className="hero-summary-card">
-              <span>Config Graph</span>
-              <strong>{summary.config_files.length} file(s)</strong>
-            </article>
-          </div>
-          <SurfacePills surfaces={summary.surfaces} />
-          <div className="explain-actions">
-            <button type="button" className="primary-button" onClick={handleReload} disabled={reloadMutation.isPending}>
-              {reloadMutation.isPending ? "Reloading..." : "Reload"}
-            </button>
-            <button type="button" className="secondary-button" onClick={handleSync} disabled={syncMutation.isPending}>
-              {syncMutation.isPending ? "Syncing..." : "Sync All"}
-            </button>
-          </div>
-        </div>
-      </section>
-
       <section className="stats-grid">
+        <StatCard label="Profile" value={summary.profile || "default"} />
         <StatCard label="Sources" value={String(summary.source_count)} />
         <StatCard label="Mounts" value={String(summary.mount_count)} />
         <StatCard label="High Risk" value={String(highRiskMounts.length)} />
-        <StatCard label="Recent Runs" value={String(runs.length)} />
       </section>
 
       <div className="content-grid two-col">
-        <Panel title="Loaded Config Files" subtitle="后端实际读取并编译的配置路径" kicker="Runtime Graph">
+        <Panel
+          title="Loaded Config Files"
+          subtitle="后端实际读取并编译的配置路径"
+          kicker="Runtime Graph"
+          actions={
+            <div className="explain-actions">
+              <SurfacePills surfaces={summary.surfaces} />
+              <button type="button" className="primary-button" onClick={handleReload} disabled={reloadMutation.isPending}>
+                {reloadMutation.isPending ? "Reloading..." : "Reload"}
+              </button>
+              <button type="button" className="secondary-button" onClick={handleSync} disabled={syncMutation.isPending}>
+                {syncMutation.isPending ? "Syncing..." : "Sync All"}
+              </button>
+            </div>
+          }
+        >
+          {actionMessage ? <div className="inline-note">{actionMessage}</div> : null}
           <ul className="plain-list list-grid">
             {summary.config_files.map((file) => (
               <li key={file} className="list-card">

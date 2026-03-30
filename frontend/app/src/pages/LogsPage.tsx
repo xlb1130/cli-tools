@@ -46,17 +46,6 @@ export function LogsPage() {
 
   return (
     <div className="page-stack">
-      <section className="hero">
-        <div>
-          <PageTitle
-            icon="logs"
-            eyebrow="Logs"
-            title="App / Discovery / Config 留痕视图"
-            description="这页把 `/api/logs/app`、`/api/logs/discovery`、`/api/logs/config` 直接前台化，方便从 UI 快速排查 auth、sync、hook 和配置问题。"
-          />
-        </div>
-      </section>
-
       <Panel title="App Logs" subtitle="运行时事件、hook 调度、auth 操作与 HTTP surface 事件">
         <div className="filters">
           <label>

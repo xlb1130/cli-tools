@@ -22,17 +22,6 @@ export function RunsPage() {
 
   return (
     <div className="page-stack">
-      <section className="hero">
-        <div>
-          <PageTitle
-            icon="runs"
-            eyebrow="Runs"
-            title="Run history 与单次执行追踪"
-            description="先看历史列表，再进入单条 run 详情。这里承接的是运行时最小留痕和排障跳转入口。"
-          />
-        </div>
-      </section>
-
       <Panel title="Run History" subtitle="最小执行留痕，供前端与排障使用">
         <div className="table-list">
           {runs.map((run) => (

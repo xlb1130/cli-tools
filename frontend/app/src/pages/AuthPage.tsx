@@ -117,21 +117,10 @@ export function AuthPage() {
 
   return (
     <div className="page-stack">
-      <section className="hero">
-        <div>
-          <PageTitle
-            icon="auth"
-            eyebrow="Auth"
-            title="认证状态与会话操作台"
-            description="这里把后端已有的 auth profile 状态、session 解析结果和 login / refresh / logout 入口直接放到控制台里。"
-          />
-          {actionMessage ? <div className="inline-note">{actionMessage}</div> : null}
-          {actionError ? <div className="inline-error">{actionError}</div> : null}
-        </div>
-      </section>
-
       <div className="content-grid two-col">
         <Panel title="Profiles" subtitle="当前已配置 auth profile 与状态">
+          {actionMessage ? <div className="inline-note">{actionMessage}</div> : null}
+          {actionError ? <div className="inline-error">{actionError}</div> : null}
           {items.length ? (
             <div className="table-container">
               <table className="data-table">

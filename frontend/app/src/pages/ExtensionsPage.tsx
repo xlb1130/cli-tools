@@ -233,17 +233,6 @@ export function ExtensionsPage() {
 
   return (
     <div className="page-stack">
-      <section className="hero">
-        <div>
-          <PageTitle
-            icon="extensions"
-            eyebrow="Extensibility"
-            title="Plugin / Provider / Hook 调试控制台"
-            description="这里展示的是 northbound 调试视角：哪些扩展已加载、provider 归属到哪里、hook 如何绑定，以及最近一次调度做了什么。"
-          />
-        </div>
-      </section>
-
       <section className="stats-grid">
         <StatCard label="Plugin Providers" value={String(readySummary.plugin_provider_count)} />
         <StatCard label="Core Providers" value={String(readySummary.core_provider_count)} />

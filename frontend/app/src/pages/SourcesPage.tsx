@@ -144,24 +144,6 @@ export function SourcesPage() {
 
   return (
     <div className="page-stack">
-      <section className="hero">
-        <div>
-          <PageTitle
-            icon="sources"
-            eyebrow="Sources"
-            title="Source registry 与运行态入口"
-            description="这里先看 source 摘要，再点进去做 `show` / `test` / `test --discover`。页面关注的是 provider、auth、drift、discovery 是否真的接得起来。"
-          />
-          {message ? <div className="inline-note">{message}</div> : null}
-          {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
-        </div>
-        <div className="hero-actions">
-          <button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)}>
-            Create Source
-          </button>
-        </div>
-      </section>
-
       {/* Create Source Modal */}
       {isCreateModalOpen && (
         <div className="modal-overlay" onClick={() => setIsCreateModalOpen(false)}>
@@ -251,6 +233,9 @@ export function SourcesPage() {
         subtitle="筛选后进入 source 详情页，查看 show/test 结果"
         actions={
           <div className="filters-compact">
+            <button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)}>
+              Create Source
+            </button>
             <input
               className="field"
               placeholder="搜索 source 名称 / provider / discovery"
@@ -281,6 +266,8 @@ export function SourcesPage() {
           </div>
         }
       >
+        {message ? <div className="inline-note">{message}</div> : null}
+        {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
 
         {sources.length ? (
           <div className="table-container">

@@ -39,29 +39,6 @@ export function DriftPage() {
 
   return (
     <div className="page-stack">
-      <section className="hero">
-        <div>
-          <PageTitle
-            icon="drift"
-            eyebrow="Drift"
-            title="Capability drift 与治理结果"
-            description="这里直接消费 `/api/drift` 和 `/api/drift/:source`，把最新 sync report、source drift state、mount governance 一起拉到前台。"
-          />
-        </div>
-        <div className="hero-actions">
-          <label className="field-wrap">
-            <span className="field-label">Source</span>
-            <select className="field" value={selectedSource} onChange={(event) => setSelectedSource(event.target.value)}>
-              {sourcesQuery.data?.map((source) => (
-                <option key={source.name} value={source.name}>
-                  {source.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </section>
-
       <section className="stats-grid">
         <StatCard label="Severity" value={String(sourceState?.severity || driftSummary.severity || "clean")} />
         <StatCard label="Affected Mounts" value={String(sourceState?.affected_mount_count ?? 0)} />
@@ -70,7 +47,22 @@ export function DriftPage() {
       </section>
 
       <div className="content-grid two-col">
-        <Panel title="Current Source State" subtitle="source 粒度的 drift 治理状态">
+        <Panel
+          title="Current Source State"
+          subtitle="source 粒度的 drift 治理状态"
+          actions={
+            <label className="field-wrap">
+              <span className="field-label">Source</span>
+              <select className="field" value={selectedSource} onChange={(event) => setSelectedSource(event.target.value)}>
+                {sourcesQuery.data?.map((source) => (
+                  <option key={source.name} value={source.name}>
+                    {source.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          }
+        >
           <div className="stack">
             <dl className="detail-grid">
               <div>

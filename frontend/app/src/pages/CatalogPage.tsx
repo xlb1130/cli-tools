@@ -60,17 +60,6 @@ export function CatalogPage() {
 
   return (
     <div className="page-stack">
-      <section className="hero">
-        <div>
-          <PageTitle
-            icon="catalog"
-            eyebrow="Catalog"
-            title="Capability cards 而不是原始 JSON"
-            description="这里按 capability card 方式展示 catalog 里的 mount，支持过滤、搜索、按 risk/source/surface 聚焦，保留足够的 machine contract 信息但不把人淹没在 JSON 里。"
-          />
-        </div>
-      </section>
-
       <Panel title="Catalog Filters" subtitle="筛 capability，而不是滚整份 export JSON">
         <div className="filters">
           <input

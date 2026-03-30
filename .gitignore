@@ -8,5 +8,5 @@ src/*.egg-info/
 src/cts.egg-info/
 frontend/app/dist/
 frontend/app/*.tsbuildinfo
-
+.DS_Store
 dist/

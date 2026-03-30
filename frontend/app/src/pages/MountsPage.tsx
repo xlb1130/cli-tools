@@ -120,29 +120,14 @@ export function MountsPage() {
 
   return (
     <div className="page-stack">
-      <section className="hero">
-        <div>
-          <PageTitle
-            icon="mounts"
-            eyebrow="Mounts"
-            title="人类命令路径与机器合同在这里汇合"
-            description="这里管理 mount inventory 和创建入口，把发现出来的 operation 收口成稳定产品命令。"
-          />
-          {message ? <div className="inline-note">{message}</div> : null}
-          {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
-        </div>
-        <div className="hero-actions">
-          <button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)}>
-            Create Mount
-          </button>
-        </div>
-      </section>
-
       <Panel
         title="Mount Inventory"
         subtitle="按 source / risk / surface 浏览和管理现有 mount"
         actions={
           <div className="filters-compact">
+            <button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)}>
+              Create Mount
+            </button>
             <input
               className="field"
               placeholder="搜索 mount id / stable name / command path"
@@ -173,6 +158,8 @@ export function MountsPage() {
           </div>
         }
       >
+        {message ? <div className="inline-note">{message}</div> : null}
+        {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
         {mounts.length ? (
           <div className="table-container">
             <table className="data-table">

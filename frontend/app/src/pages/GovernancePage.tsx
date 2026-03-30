@@ -53,44 +53,21 @@ export function GovernancePage() {
 
   return (
     <div className="page-stack">
-      <section className="hero">
-        <div>
-          <PageTitle
-            icon="governance"
-            eyebrow="Governance"
-            title="Reliability / Logs / Drift 轻量治理页"
-            description="这一页只回答三个问题: 现在的可靠性默认策略是什么、运行时有没有被限流/并发/幂等等机制拦住、以及 drift 和 logs 最近有没有值得处理的信号。"
-          />
-        </div>
-        <div className="hero-actions">
-          <div className="hero-summary-grid">
-            <article className="hero-summary-card">
-              <span>Drift Source</span>
-              <strong>{selectedSource || "-"}</strong>
-            </article>
-            <article className="hero-summary-card">
-              <span>Drift Severity</span>
-              <strong>{String(sourceState?.severity || drift?.drift_summary?.severity || "clean")}</strong>
-            </article>
-          </div>
-          <div className="stack compact-stack">
-            <span className="sidebar-chip">Budgets {reliability?.configured_budget_count ?? 0}</span>
-            <span className="sidebar-chip">Rate Limiters {rateLimiters.length}</span>
-            <span className="sidebar-chip">Idempotency {reliability?.status?.idempotency?.total_records ?? 0}</span>
-          </div>
-        </div>
-      </section>
-
       <section className="stats-grid">
+        <StatCard label="Drift Source" value={selectedSource || "-"} />
+        <StatCard label="Drift Severity" value={String(sourceState?.severity || drift?.drift_summary?.severity || "clean")} />
         <StatCard label="Retry Attempts" value={String(reliability?.defaults?.retry?.max_attempts ?? "-")} />
         <StatCard label="Per Source Concurrency" value={String(reliability?.defaults?.concurrency?.max_inflight_per_source ?? "-")} />
-        <StatCard label="Blocked Mounts" value={String(sourceState?.blocked_mount_count ?? 0)} />
-        <StatCard label="Signal Logs" value={String(highlightedLogs.length)} />
       </section>
 
       <div className="content-grid two-col">
         <Panel title="Reliability Defaults" subtitle="当前全局 retry / timeout / concurrency 默认值" kicker="Policy">
           <div className="stack">
+            <div className="pill-row">
+              <span className="sidebar-chip">Budgets {reliability?.configured_budget_count ?? 0}</span>
+              <span className="sidebar-chip">Rate Limiters {rateLimiters.length}</span>
+              <span className="sidebar-chip">Idempotency {reliability?.status?.idempotency?.total_records ?? 0}</span>
+            </div>
             <dl className="detail-grid">
               <div>
                 <dt>Timeout</dt>

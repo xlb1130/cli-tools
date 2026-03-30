@@ -1272,8 +1272,9 @@ textarea,
 .panel-header {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
-  align-items: center;
+  gap: 16px 20px;
+  align-items: flex-start;
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--border);
   position: relative;
   z-index: 1;
@@ -1283,6 +1284,7 @@ textarea,
   display: grid;
   gap: 2px;
   min-width: 0;
+  flex: 1 1 280px;
 }
 
 .panel-header h2 {
@@ -1304,8 +1306,17 @@ textarea,
 .panel-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
+  flex: 999 1 420px;
+  min-width: min(100%, 320px);
+  max-width: 100%;
+}
+
+.panel-actions > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .panel-body-content {
@@ -1629,20 +1640,34 @@ textarea,
 
 .filters-compact {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
   margin: 0;
   padding: 0;
   border: none;
   background: transparent;
   box-shadow: none;
+  width: 100%;
 }
 
 .filters-compact .field {
-  min-width: 140px;
+  flex: 1 1 160px;
+  min-width: 160px;
+  width: auto;
   padding: 8px 12px;
   min-height: 36px;
   font-size: 0.85rem;
+}
+
+.filters-compact .primary-button,
+.filters-compact .secondary-button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  white-space: nowrap;
 }
 
 .field,
@@ -2044,10 +2069,6 @@ textarea.json-input {
     width: 100%;
     grid-column: 1 / -1;
     justify-content: space-between;
-  }
-
-  .panel-header {
-    flex-direction: column;
   }
 
   .panel-actions {

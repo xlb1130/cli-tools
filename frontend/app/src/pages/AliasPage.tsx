@@ -58,25 +58,17 @@ export function AliasPage() {
 
   return (
     <div className="page-stack">
-      <section className="hero">
-        <div>
-          <PageTitle
-            icon="aliases"
-            eyebrow="Aliases"
-            title="Alias 管理界面"
-            description="这里对应 `cts manage alias list/add/remove`，适合给常用 mount 做更好记的命令入口。"
-          />
-          {message ? <div className="inline-note">{message}</div> : null}
-          {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
-        </div>
-        <div className="hero-actions">
+      <Panel
+        title="Alias Inventory"
+        subtitle="现有 alias 与目标路径"
+        actions={
           <button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)}>
             Create Alias
           </button>
-        </div>
-      </section>
-
-      <Panel title="Alias Inventory" subtitle="现有 alias 与目标路径">
+        }
+      >
+        {message ? <div className="inline-note">{message}</div> : null}
+        {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
           {aliases.length ? (
             <div className="table-container">
               <table className="data-table">
