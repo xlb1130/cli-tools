@@ -5,12 +5,15 @@ import { JsonViewer } from "../components/JsonViewer";
 import { LoadingState } from "../components/LoadingState";
 import { Panel } from "../components/Panel";
 import { PageTitle } from "../components/PageTitle";
+import { TablePagination } from "../components/TablePagination";
 import { useAuthLogin, useAuthLogout, useAuthProfile, useAuthProfiles, useAuthRefresh } from "../lib/api";
 import { formatDate, formatList } from "../lib/format";
 
 export function AuthPage() {
   const inventoryQuery = useAuthProfiles();
   const [selectedName, setSelectedName] = useState<string>("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [formState, setFormState] = useState({
     token: "",
     apiKey: "",
@@ -125,45 +128,61 @@ export function AuthPage() {
           {actionMessage ? <div className="inline-note">{actionMessage}</div> : null}
           {actionError ? <div className="inline-error">{actionError}</div> : null}
         </div>
-        <div className="hero-actions">
-          <div className="stack compact-stack">
-            <span className="sidebar-chip">Profiles {inventory.summary.profile_count}</span>
-            <span className="sidebar-chip">Active {inventory.summary.active_count}</span>
-            <span className="sidebar-chip">Login Required {inventory.summary.login_required_count}</span>
-          </div>
-        </div>
       </section>
 
       <div className="content-grid two-col">
         <Panel title="Profiles" subtitle="当前已配置 auth profile 与状态">
-          <div className="card-list">
-            {items.map((item) => (
-              <button
-                key={item.name}
-                type="button"
-                className={`source-card source-card-button ${selectedName === item.name ? "focused" : ""}`}
-                onClick={() => setSelectedName(item.name)}
-              >
-                <div className="source-card-top">
-                  <div>
-                    <h3>{item.name}</h3>
-                    <p>{formatList(item.source_types)}</p>
-                  </div>
-                  <span className={authBadgeClass(item.state)}>{item.state}</span>
-                </div>
-                <dl className="detail-list">
-                  <div>
-                    <dt>Reason</dt>
-                    <dd>{item.reason || "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>Sources</dt>
-                    <dd>{item.source_count}</dd>
-                  </div>
-                </dl>
-              </button>
-            ))}
-          </div>
+          {items.length ? (
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Source Types</th>
+                    <th>State</th>
+                    <th>Reason</th>
+                    <th>Sources</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((item) => (
+                    <tr key={item.name} className={selectedName === item.name ? "table-row-selected" : ""}>
+                      <td>
+                        <button
+                          type="button"
+                          className="data-table-link"
+                          onClick={() => setSelectedName(item.name)}
+                        >
+                          {item.name}
+                        </button>
+                      </td>
+                      <td>{formatList(item.source_types)}</td>
+                      <td>
+                        <span className={authBadgeClass(item.state)}>{item.state}</span>
+                      </td>
+                      <td>{item.reason || "-"}</td>
+                      <td>{item.source_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <TablePagination
+                currentPage={currentPage}
+                pageSize={pageSize}
+                totalItems={items.length}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(size) => {
+                  setPageSize(size);
+                  setCurrentPage(1);
+                }}
+              />
+            </div>
+          ) : (
+            <div className="table-empty">
+              <strong>还没有 auth profile</strong>
+              <p>配置 auth profile 以启用认证功能。</p>
+            </div>
+          )}
         </Panel>
 
         <Panel

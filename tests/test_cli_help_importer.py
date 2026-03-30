@@ -63,6 +63,7 @@ mounts:
         [
             "--config",
             str(config_path),
+            "manage",
             "source",
             "import-help",
             "demo_cli",
@@ -124,6 +125,7 @@ mounts:
         [
             "--config",
             str(config_path),
+            "manage",
             "source",
             "import-help",
             "demo_cli",
@@ -164,3 +166,72 @@ mounts:
     assert "--name" in argv and "Alice" in argv
     assert "--count" in argv and "2" in argv
     assert "--verbose" in argv
+
+
+CLI_TREE_SCRIPT = """
+import json
+import click
+
+
+@click.group()
+def cli():
+    pass
+
+
+@cli.group()
+def admin():
+    pass
+
+
+@admin.command()
+@click.option("--name", required=True, help="User name")
+def add_user(name):
+    click.echo(json.dumps({"action": "add_user", "name": name}))
+
+
+@admin.command()
+@click.option("--name", required=True, help="User name")
+def remove_user(name):
+    click.echo(json.dumps({"action": "remove_user", "name": name}))
+
+
+if __name__ == "__main__":
+    cli()
+"""
+
+
+def test_import_cli_all_recursively_imports_leaf_commands(tmp_path: Path):
+    script_path = tmp_path / "aac_cli.py"
+    script_path.write_text(CLI_TREE_SCRIPT, encoding="utf-8")
+    config_path = tmp_path / "cts.yaml"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "cli",
+            "aac",
+            sys.executable,
+            str(script_path),
+            "--all",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["action"] == "import_cli_tree_apply"
+    assert payload["operation_count"] == 2
+    assert payload["mount_count"] == 2
+
+    app = build_app(str(config_path))
+    add_mount = app.catalog.find_by_path(["aac", "admin", "add-user"])
+    remove_mount = app.catalog.find_by_path(["aac", "admin", "remove-user"])
+    assert add_mount is not None
+    assert remove_mount is not None
+    assert add_mount.operation.id == "admin_add_user"
+    assert remove_mount.operation.id == "admin_remove_user"

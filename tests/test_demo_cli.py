@@ -43,6 +43,10 @@ def test_dynamic_help_includes_provider_details():
     assert "Provider: cli" in result.output
     assert "Risk: read" in result.output
     assert "Stable mount id: demo-echo" in result.output
+    assert "Request Parameters:" in result.output
+    assert "Runtime Options:" in result.output
+    assert "--text TEXT" in result.output
+    assert "--input-json TEXT" in result.output
 
 
 def test_source_test_reports_health():

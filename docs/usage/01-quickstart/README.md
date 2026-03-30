@@ -1,48 +1,85 @@
 # Quickstart
 
-**目标**：30 秒内跑通，不需要任何配置文件。
+**目标**：5 分钟内理解 `cts` 最核心的运行模型，不先陷进 provider 细节。
 
 ---
 
-## 最快路径
+## 第一步：先导入一个本地 shell 命令
+
+这是当前最快的起点，不需要你先手写配置文件。
 
 ```bash
-# 1. 安装
-pip install cts
-
-# 2. 导入一个命令（无需配置文件）
-cts import cli hello --exec "echo Hello, World!" --apply
-
-# 3. 执行
+cts import shell hello --exec 'echo Hello cts!' --apply
 cts hello
-# 输出: Hello, World!
 ```
 
-完成。不需要配置文件，不需要 manifest。
+你会得到一个已经编译好的本地命令。
 
----
-
-## 还能做什么
+再看一下帮助：
 
 ```bash
-# 导入 MCP Server（同样无需配置文件）
-cts import mcp my-mcp --server-config '{"type":"sse","url":"https://mcp.api-inference.modelscope.net/6d85ac1213db43/sse"}' --apply
-cts my-mcp <tool-name> --param value
-
-# 看看当前挂载了什么
-cts manage mount list
-
-# 用稳定 ID 调用
-cts manage invoke hello
-
-# 预览执行计划
-cts manage explain hello
+cts hello --help
 ```
+
+这时候你已经实际见到了：
+
+- `source`: `hello`
+- `operation`: `run`
+- `mount`: `hello`
+- `command path`: `hello`
 
 ---
 
-## 下一步
+## 第二步：看执行计划
 
-- 想导入更复杂的 CLI：[本地 CLI](../02-local-cli/README.md)
-- 想用配置文件管理多个命令：查看 examples/
-- 想理解 mount 命名规则：[Mount 设计](../08-mounts/README.md)
+```bash
+cts explain hello
+```
+
+这一步的目的是建立一个直觉：
+
+- `cts` 不是简单转发命令
+- 它先把能力编译成统一模型，再决定怎么执行
+
+---
+
+## 第三步：看 source 和 mount
+
+```bash
+cts manage source show hello --format json
+cts manage mount list --format json
+```
+
+如果你能看懂这两条命令的输出，就已经可以进入下一阶段了。
+
+---
+
+## 第四步：开始导入你自己的能力
+
+接下来按你的场景继续：
+
+- 接已有 CLI：看 [本地 CLI](../02-local-cli/README.md)
+- 接 shell 脚本：看 [Shell 脚本](../03-shell/README.md)
+- 接 MCP：看 [MCP Server](../07-mcp/README.md)
+- 想理解命名和路径：看 [Mount 设计](../08-mounts/README.md)
+
+---
+
+## 你现在应该记住什么
+
+只记这条就够了：
+
+```text
+source -> operation -> mount -> surface
+```
+
+以及两类最常见命令：
+
+```bash
+# 执行业务命令
+cts <path...> [args]
+
+# 看内部编译结果
+cts manage ...
+cts explain ...
+```

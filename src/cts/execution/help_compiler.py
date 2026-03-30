@@ -20,6 +20,9 @@ RUNTIME_OPTION_NAMES = {
     "yes",
 }
 
+REQUEST_PARAMETER_GROUP = "Request Parameters"
+RUNTIME_OPTION_GROUP = "Runtime Options"
+
 
 def compile_input_schema(mount: MountRecord) -> Dict[str, Any]:
     schema = dict(mount.operation.input_schema or {})
@@ -70,57 +73,60 @@ def build_click_params(mount: MountRecord) -> List[click.Parameter]:
 
         if property_type == "array":
             click_type = _schema_to_click_type(item_type, enum)
-            params.append(
-                click.Option(
-                    [option_name],
-                    multiple=True,
-                    type=click_type,
-                    help=help_text,
-                    show_default=False,
-                )
+            option = click.Option(
+                [option_name],
+                multiple=True,
+                type=click_type,
+                help=help_text,
+                show_default=False,
             )
+            setattr(option, "help_group", REQUEST_PARAMETER_GROUP)
+            params.append(option)
             continue
 
         if property_type == "boolean":
-            params.append(click.Option([option_name], is_flag=True, default=None, help=help_text))
+            option = click.Option([option_name], is_flag=True, default=None, help=help_text)
+            setattr(option, "help_group", REQUEST_PARAMETER_GROUP)
+            params.append(option)
             continue
 
         click_type = _schema_to_click_type(property_type, enum)
-        params.append(
-            click.Option(
-                [option_name],
-                type=click_type,
-                default=None if default is None else default,
-                required=False,
-                show_default=default is not None,
-                help=help_text,
-            )
+        option = click.Option(
+            [option_name],
+            type=click_type,
+            default=None if default is None else default,
+            required=False,
+            show_default=default is not None,
+            help=help_text,
         )
+        setattr(option, "help_group", REQUEST_PARAMETER_GROUP)
+        params.append(option)
 
-    params.extend(
-        [
-            click.Option(["--input-json", "input_json"], help="Raw JSON object input."),
-            click.Option(
-                ["--input-file", "input_file"],
-                type=click.Path(path_type=Path, exists=True, dir_okay=False),
-                help="Path to a JSON file containing the operation input payload.",
-            ),
-            click.Option(
-                ["--output", "output_format"],
-                type=click.Choice(["text", "json"]),
-                default="text",
-                show_default=True,
-                help="Render output as text or structured JSON.",
-            ),
-            click.Option(["--dry-run"], is_flag=True, help="Plan the request without executing it."),
-            click.Option(
-                ["--non-interactive"],
-                is_flag=True,
-                help="Disable interactive prompts and return structured errors.",
-            ),
-            click.Option(["--yes"], is_flag=True, help="Reserved for future confirmable operations."),
-        ]
-    )
+    runtime_options = [
+        click.Option(["--input-json", "input_json"], help="Raw JSON object input."),
+        click.Option(
+            ["--input-file", "input_file"],
+            type=click.Path(path_type=Path, exists=True, dir_okay=False),
+            help="Path to a JSON file containing the operation input payload.",
+        ),
+        click.Option(
+            ["--output", "output_format"],
+            type=click.Choice(["text", "json"]),
+            default="text",
+            show_default=True,
+            help="Render output as text or structured JSON.",
+        ),
+        click.Option(["--dry-run"], is_flag=True, help="Plan the request without executing it."),
+        click.Option(
+            ["--non-interactive"],
+            is_flag=True,
+            help="Disable interactive prompts and return structured errors.",
+        ),
+        click.Option(["--yes"], is_flag=True, help="Reserved for future confirmable operations."),
+    ]
+    for option in runtime_options:
+        setattr(option, "help_group", RUNTIME_OPTION_GROUP)
+    params.extend(runtime_options)
     return params
 
 

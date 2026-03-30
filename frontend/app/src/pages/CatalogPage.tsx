@@ -69,13 +69,6 @@ export function CatalogPage() {
             description="这里按 capability card 方式展示 catalog 里的 mount，支持过滤、搜索、按 risk/source/surface 聚焦，保留足够的 machine contract 信息但不把人淹没在 JSON 里。"
           />
         </div>
-        <div className="hero-actions">
-          <div className="stack compact-stack">
-            <span className="sidebar-chip">Visible {mounts.length}</span>
-            <span className="sidebar-chip">Conflicts {readyCatalog.conflicts.length}</span>
-            <span className="sidebar-chip">Severity {String(readyCatalog.drift_summary?.severity || "none")}</span>
-          </div>
-        </div>
       </section>
 
       <Panel title="Catalog Filters" subtitle="筛 capability，而不是滚整份 export JSON">

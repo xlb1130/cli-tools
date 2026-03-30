@@ -7,6 +7,7 @@ import { LoadingState } from "../components/LoadingState";
 import { Panel } from "../components/Panel";
 import { PageTitle } from "../components/PageTitle";
 import { SurfacePills } from "../components/SurfacePills";
+import { TablePagination } from "../components/TablePagination";
 import { useAddSource, useSources } from "../lib/api";
 import { formatList } from "../lib/format";
 
@@ -24,6 +25,7 @@ const DISCOVERY_MODE_OPTIONS = [
 export function SourcesPage() {
   const [params, setParams] = useSearchParams();
   const addSourceMutation = useAddSource();
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [formState, setFormState] = useState({
     providerType: "cli",
     sourceName: "",
@@ -37,6 +39,8 @@ export function SourcesPage() {
   });
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const filters = {
     q: params.get("q") || "",
     type: params.get("type") || "",
@@ -79,6 +83,8 @@ export function SourcesPage() {
     return true;
   });
 
+  const paginatedSources = sources.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   const types = Array.from(new Set((sourcesQuery.data ?? []).map((source) => source.type))).sort();
   const authStates = Array.from(new Set((sourcesQuery.data ?? []).map((source) => source.auth?.state).filter(Boolean) as string[])).sort();
   const providerTypeOptions = Array.from(new Set([...PROVIDER_TYPE_OPTIONS, ...types])).sort();
@@ -91,6 +97,7 @@ export function SourcesPage() {
       next.delete(key);
     }
     setParams(next);
+    setCurrentPage(1);
   };
 
   const handleAddSource = async (event: FormEvent<HTMLFormElement>) => {
@@ -110,8 +117,10 @@ export function SourcesPage() {
         surfaces: formState.surfaces,
       });
       setMessage(`Source ${result.source_name} 已创建。`);
+      setIsCreateModalOpen(false);
+      setCurrentPage(1);
       setFormState({
-        providerType: formState.providerType,
+        providerType: "cli",
         sourceName: "",
         description: "",
         executable: "",
@@ -147,146 +156,183 @@ export function SourcesPage() {
           {errorMessage ? <div className="inline-error">{errorMessage}</div> : null}
         </div>
         <div className="hero-actions">
-          <div className="stack compact-stack">
-            <span className="sidebar-chip">Sources {sources.length}</span>
-            <span className="sidebar-chip">Healthy {(sourcesQuery.data ?? []).filter((item) => item.health?.ok).length}</span>
-            <span className="sidebar-chip">Auth Bound {(sourcesQuery.data ?? []).filter((item) => item.auth_ref).length}</span>
-          </div>
+          <button type="button" className="primary-button" onClick={() => setIsCreateModalOpen(true)}>
+            Create Source
+          </button>
         </div>
       </section>
 
-      <Panel title="Create Source" subtitle="最小 source 管理入口，先覆盖常用 CLI / HTTP 类 provider 字段">
-        <form className="form-grid" onSubmit={handleAddSource}>
-          <label>
-            <span className="field-label">Provider Type</span>
-            <select className="field" value={formState.providerType} onChange={(event) => setFormState((current) => ({ ...current, providerType: event.target.value }))}>
-              {providerTypeOptions.map((type) => (
+      {/* Create Source Modal */}
+      {isCreateModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsCreateModalOpen(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h2>Create Source</h2>
+                <p>最小 source 管理入口，先覆盖常用 CLI / HTTP 类 provider 字段</p>
+              </div>
+              <button className="modal-close" onClick={() => setIsCreateModalOpen(false)}>
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              <form className="form-grid" onSubmit={handleAddSource}>
+                <label>
+                  <span className="field-label">Provider Type</span>
+                  <select className="field" value={formState.providerType} onChange={(event) => setFormState((current) => ({ ...current, providerType: event.target.value }))}>
+                    {providerTypeOptions.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className="field-label">Source Name</span>
+                  <input className="field" value={formState.sourceName} onChange={(event) => setFormState((current) => ({ ...current, sourceName: event.target.value }))} />
+                </label>
+                <label>
+                  <span className="field-label">Description</span>
+                  <input className="field" value={formState.description} onChange={(event) => setFormState((current) => ({ ...current, description: event.target.value }))} />
+                </label>
+                <label>
+                  <span className="field-label">Executable</span>
+                  <input className="field" value={formState.executable} onChange={(event) => setFormState((current) => ({ ...current, executable: event.target.value }))} placeholder="python3 / kubectl" />
+                </label>
+                <label>
+                  <span className="field-label">Base URL</span>
+                  <input className="field" value={formState.baseUrl} onChange={(event) => setFormState((current) => ({ ...current, baseUrl: event.target.value }))} placeholder="https://api.example.com" />
+                </label>
+                <label>
+                  <span className="field-label">Manifest</span>
+                  <input className="field" value={formState.manifest} onChange={(event) => setFormState((current) => ({ ...current, manifest: event.target.value }))} />
+                </label>
+                <label>
+                  <span className="field-label">Discover Mode</span>
+                  <select className="field" value={formState.discoverMode} onChange={(event) => setFormState((current) => ({ ...current, discoverMode: event.target.value }))}>
+                    {DISCOVERY_MODE_OPTIONS.map((option) => (
+                      <option key={option.value || "default"} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className="field-label">Auth Ref</span>
+                  <input className="field" value={formState.authRef} onChange={(event) => setFormState((current) => ({ ...current, authRef: event.target.value }))} />
+                </label>
+                <div className="form-full">
+                  <span className="field-label">Surfaces</span>
+                  <div className="option-grid">
+                    {SURFACE_OPTIONS.map((surface) => (
+                      <label key={surface} className={`option-chip ${formState.surfaces.includes(surface) ? "option-chip-active" : ""}`}>
+                        <input type="checkbox" checked={formState.surfaces.includes(surface)} onChange={() => toggleSurface(surface)} />
+                        <span>{surface}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </form>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="secondary-button" onClick={() => setIsCreateModalOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" className="primary-button" onClick={() => document.querySelector('form')?.requestSubmit()} disabled={addSourceMutation.isPending}>
+                {addSourceMutation.isPending ? "Creating..." : "Create Source"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Panel
+        title="Source Inventory"
+        subtitle="筛选后进入 source 详情页，查看 show/test 结果"
+        actions={
+          <div className="filters-compact">
+            <input
+              className="field"
+              placeholder="搜索 source 名称 / provider / discovery"
+              value={filters.q}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setFilter("q", event.target.value)}
+            />
+            <select className="field" value={filters.type} onChange={(event) => setFilter("type", event.target.value)}>
+              <option value="">All providers</option>
+              {types.map((type) => (
                 <option key={type} value={type}>
                   {type}
                 </option>
               ))}
             </select>
-          </label>
-          <label>
-            <span className="field-label">Source Name</span>
-            <input className="field" value={formState.sourceName} onChange={(event) => setFormState((current) => ({ ...current, sourceName: event.target.value }))} />
-          </label>
-          <label>
-            <span className="field-label">Description</span>
-            <input className="field" value={formState.description} onChange={(event) => setFormState((current) => ({ ...current, description: event.target.value }))} />
-          </label>
-          <label>
-            <span className="field-label">Executable</span>
-            <input className="field" value={formState.executable} onChange={(event) => setFormState((current) => ({ ...current, executable: event.target.value }))} placeholder="python3 / kubectl" />
-          </label>
-          <label>
-            <span className="field-label">Base URL</span>
-            <input className="field" value={formState.baseUrl} onChange={(event) => setFormState((current) => ({ ...current, baseUrl: event.target.value }))} placeholder="https://api.example.com" />
-          </label>
-          <label>
-            <span className="field-label">Manifest</span>
-            <input className="field" value={formState.manifest} onChange={(event) => setFormState((current) => ({ ...current, manifest: event.target.value }))} />
-          </label>
-          <label>
-            <span className="field-label">Discover Mode</span>
-            <select className="field" value={formState.discoverMode} onChange={(event) => setFormState((current) => ({ ...current, discoverMode: event.target.value }))}>
-              {DISCOVERY_MODE_OPTIONS.map((option) => (
-                <option key={option.value || "default"} value={option.value}>
-                  {option.label}
+            <select className="field" value={filters.auth} onChange={(event) => setFilter("auth", event.target.value)}>
+              <option value="">All auth states</option>
+              {authStates.map((state) => (
+                <option key={state} value={state}>
+                  {state}
                 </option>
               ))}
             </select>
-          </label>
-          <label>
-            <span className="field-label">Auth Ref</span>
-            <input className="field" value={formState.authRef} onChange={(event) => setFormState((current) => ({ ...current, authRef: event.target.value }))} />
-          </label>
-          <div className="form-full">
-            <span className="field-label">Surfaces</span>
-            <div className="option-grid">
-              {SURFACE_OPTIONS.map((surface) => (
-                <label key={surface} className={`option-chip ${formState.surfaces.includes(surface) ? "option-chip-active" : ""}`}>
-                  <input type="checkbox" checked={formState.surfaces.includes(surface)} onChange={() => toggleSurface(surface)} />
-                  <span>{surface}</span>
-                </label>
-              ))}
-            </div>
+            <select className="field" value={filters.health} onChange={(event) => setFilter("health", event.target.value)}>
+              <option value="">All health</option>
+              <option value="healthy">healthy</option>
+              <option value="needs_check">needs check</option>
+            </select>
           </div>
-          <div className="inline-actions">
-            <button type="submit" className="primary-button" disabled={addSourceMutation.isPending}>
-              {addSourceMutation.isPending ? "Creating..." : "Create Source"}
-            </button>
-          </div>
-        </form>
-      </Panel>
-
-      <Panel title="Source Inventory" subtitle="筛选后进入 source 详情页，查看 show/test 结果">
-        <div className="filters">
-          <input
-            className="field"
-            placeholder="搜索 source 名称 / provider / discovery"
-            value={filters.q}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setFilter("q", event.target.value)}
-          />
-          <select className="field" value={filters.type} onChange={(event) => setFilter("type", event.target.value)}>
-            <option value="">All providers</option>
-            {types.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-          <select className="field" value={filters.auth} onChange={(event) => setFilter("auth", event.target.value)}>
-            <option value="">All auth states</option>
-            {authStates.map((state) => (
-              <option key={state} value={state}>
-                {state}
-              </option>
-            ))}
-          </select>
-          <select className="field" value={filters.health} onChange={(event) => setFilter("health", event.target.value)}>
-            <option value="">All health</option>
-            <option value="healthy">healthy</option>
-            <option value="needs_check">needs check</option>
-          </select>
-        </div>
+        }
+      >
 
         {sources.length ? (
-          <div className="card-list">
-            {sources.map((source) => (
-              <Link key={source.name} to={`/sources/${source.name}`} className="source-card source-card-button">
-                <div className="source-card-top">
-                  <div>
-                    <h3>{source.name}</h3>
-                    <p>
-                      {source.type} · {source.discovery_mode}
-                    </p>
-                  </div>
-                  <span className={source.health?.ok ? "badge badge-safe" : "badge badge-danger"}>
-                    {source.health?.ok ? "healthy" : "needs check"}
-                  </span>
-                </div>
-                <dl className="detail-list">
-                  <div>
-                    <dt>Operations</dt>
-                    <dd>{source.operation_count}</dd>
-                  </div>
-                  <div>
-                    <dt>Auth</dt>
-                    <dd>{source.auth_ref ? `${source.auth_ref} · ${source.auth?.state || "configured"}` : "none"}</dd>
-                  </div>
-                  <div>
-                    <dt>Profiles</dt>
-                    <dd>{formatList(source.profile_scope)}</dd>
-                  </div>
-                  <div>
-                    <dt>Origin</dt>
-                    <dd>{source.origin_file || "-"}</dd>
-                  </div>
-                </dl>
-                <SurfacePills surfaces={source.expose_to_surfaces} />
-              </Link>
-            ))}
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Discovery Mode</th>
+                  <th>Operations</th>
+                  <th>Auth</th>
+                  <th>Surfaces</th>
+                  <th>Health</th>
+                  <th>Origin</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedSources.map((source) => (
+                  <tr key={source.name}>
+                    <td>
+                      <Link to={`/sources/${source.name}`} className="data-table-link">
+                        {source.name}
+                      </Link>
+                    </td>
+                    <td>{source.type}</td>
+                    <td>{source.discovery_mode}</td>
+                    <td>{source.operation_count}</td>
+                    <td>{source.auth_ref ? `${source.auth_ref} · ${source.auth?.state || "configured"}` : "none"}</td>
+                    <td>
+                      <SurfacePills surfaces={source.expose_to_surfaces} />
+                    </td>
+                    <td>
+                      <div className="data-table-status">
+                        <span className={`data-table-status-dot ${source.health?.ok ? "healthy" : "needs-check"}`} />
+                        {source.health?.ok ? "healthy" : "needs check"}
+                      </div>
+                    </td>
+                    <td>{source.origin_file || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <TablePagination
+              currentPage={currentPage}
+              pageSize={pageSize}
+              totalItems={sources.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size);
+                setCurrentPage(1);
+              }}
+            />
           </div>
         ) : (
           <EmptyState title="没有匹配的 source" body="当前筛选没有结果，可以放宽 provider、auth 或 health 条件。" />

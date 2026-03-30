@@ -169,6 +169,181 @@ def test_import_mcp_apply_persists_source_and_mounts(tmp_path: Path, monkeypatch
     assert raw["mounts"][0]["command"]["path"] == ["cn12306", "query_train"]
 
 
+def test_import_shell_apply_persists_source_and_mount_and_executes(tmp_path: Path):
+    config_path = tmp_path / "cts.yaml"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "shell",
+            "hello",
+            "--exec",
+            "echo Hello cts!",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["action"] == "import_shell_apply"
+    assert payload["mount_id"] == "hello"
+    assert payload["command_path"] == ["hello"]
+
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert raw["sources"]["hello"]["type"] == "shell"
+    assert raw["sources"]["hello"]["operations"]["run"]["provider_config"]["argv_template"] == [
+        "/bin/sh",
+        "-c",
+        "echo Hello cts!",
+    ]
+    assert raw["mounts"][0]["id"] == "hello"
+    assert raw["mounts"][0]["command"]["path"] == ["hello"]
+
+    run_result = runner.invoke(main, ["--config", str(config_path), "hello"])
+    assert run_result.exit_code == 0
+    assert "Hello cts!" in run_result.output
+
+
+def test_import_shell_apply_supports_under_prefix(tmp_path: Path):
+    config_path = tmp_path / "cts.yaml"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "shell",
+            "hello",
+            "--exec",
+            "echo Hello cts!",
+            "--under",
+            "tools",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["command_path"] == ["tools", "hello"]
+
+    run_result = runner.invoke(main, ["--config", str(config_path), "tools", "hello"])
+    assert run_result.exit_code == 0
+    assert "Hello cts!" in run_result.output
+
+
+def test_import_shell_apply_supports_script_file(tmp_path: Path):
+    config_path = tmp_path / "cts.yaml"
+    script_path = tmp_path / "hello.sh"
+    script_path.write_text("echo Hello from file!\n", encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "shell",
+            "hello-file",
+            "--script-file",
+            str(script_path),
+            "--apply",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["action"] == "import_shell_apply"
+    assert payload["script_file"] == str(script_path.resolve())
+    assert payload["exec"] is None
+
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert raw["sources"]["hello-file"]["operations"]["run"]["provider_config"]["argv_template"] == [
+        "/bin/sh",
+        str(script_path.resolve()),
+    ]
+
+    run_result = runner.invoke(main, ["--config", str(config_path), "hello-file"])
+    assert run_result.exit_code == 0
+    assert "Hello from file!" in run_result.output
+
+
+def test_import_shell_requires_exactly_one_source(tmp_path: Path):
+    config_path = tmp_path / "cts.yaml"
+    script_path = tmp_path / "hello.sh"
+    script_path.write_text("echo Hello from file!\n", encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "shell",
+            "hello",
+            "--exec",
+            "echo Hello cts!",
+            "--script-file",
+            str(script_path),
+            "--apply",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 2
+    payload = json.loads(result.output)
+    assert payload["error"]["code"] == "shell_import_source_required"
+
+
+def test_import_mcp_apply_surfaces_discovery_error(tmp_path: Path, monkeypatch):
+    config_path = tmp_path / "cts.yaml"
+
+    def fake_bridge(source_config, app, command, primitive_type=None, target=None, args=None, timeout_seconds=None):
+        raise mcp_cli.ProviderError("bridge missing dependency")
+
+    monkeypatch.setattr(mcp_cli, "_run_bridge_command", fake_bridge)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "mcp",
+            "cn12306",
+            "--server-config",
+            '{"type":"sse","url":"https://example.com/sse"}',
+            "--apply",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["tools_count"] == 0
+    assert payload["mounts_created"] == 0
+    assert payload["tools_import_error"] == "MCP discovery failed for source 'cn12306': bridge missing dependency"
+    assert payload["discovery"]["ok"] is False
+    assert payload["discovery"]["operation_count"] == 0
+    assert payload["discovery_report_path"]
+
+
 def test_import_mcp_default_servers_file_uses_default_config_dir(monkeypatch):
     def fake_bridge(source_config, app, command, primitive_type=None, target=None, args=None, timeout_seconds=None):
         assert command == "list-primitives"

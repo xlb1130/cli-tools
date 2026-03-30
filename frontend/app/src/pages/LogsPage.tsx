@@ -55,13 +55,6 @@ export function LogsPage() {
             description="这页把 `/api/logs/app`、`/api/logs/discovery`、`/api/logs/config` 直接前台化，方便从 UI 快速排查 auth、sync、hook 和配置问题。"
           />
         </div>
-        <div className="hero-actions">
-          <div className="stack compact-stack">
-            <span className="sidebar-chip">App {appEvents.length}</span>
-            <span className="sidebar-chip">Discovery {discoveryEvents.length}</span>
-            <span className="sidebar-chip">Config {configEvents.length}</span>
-          </div>
-        </div>
       </section>
 
       <Panel title="App Logs" subtitle="运行时事件、hook 调度、auth 操作与 HTTP surface 事件">

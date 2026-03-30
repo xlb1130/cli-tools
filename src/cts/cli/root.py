@@ -5,6 +5,7 @@ import shlex
 import sys
 import uuid
 import webbrowser
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from functools import update_wrapper
 from pathlib import Path
@@ -40,7 +41,15 @@ from cts.execution.logging import (
     summarize_result,
     utc_now_iso,
 )
-from cts.importers import import_cli_completion, import_cli_help, import_cli_manpage, import_cli_schema, merge_operation_into_manifest
+from cts.importers import (
+    import_cli_completion,
+    import_cli_help,
+    import_cli_manpage,
+    import_cli_schema,
+    inspect_cli_help,
+    merge_operation_into_manifest,
+    write_manifest_operations,
+)
 from cts.execution.runtime import build_error_envelope, explain_mount, invoke_mount, render_payload
 from cts.presentation import (
     build_app_summary,
@@ -124,6 +133,24 @@ class CatalogBackedGroup(click.Group):
                 no_args_is_help=True,
             )
         return None
+
+
+class GroupedOptionCommand(click.Command):
+    def format_options(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        sections: "OrderedDict[str, List[tuple[str, str]]]" = OrderedDict()
+
+        for param in self.get_params(ctx):
+            rv = param.get_help_record(ctx)
+            if rv is None:
+                continue
+            section_name = getattr(param, "help_group", "Options")
+            sections.setdefault(section_name, []).append(rv)
+
+        for section_name, records in sections.items():
+            if not records:
+                continue
+            with formatter.section(section_name):
+                formatter.write_dl(records)
 
 
 @click.group(
@@ -1164,6 +1191,7 @@ def import_group() -> None:
 @click.option("--schema-command", default=None, help="Shell-escaped command that prints a JSON schema payload.")
 @click.option("--schema-file", type=click.Path(path_type=Path, dir_okay=False, exists=True), default=None)
 @click.option("--schema-format", type=click.Choice(["auto", "operation", "bindings", "options"]), default="auto", show_default=True)
+@click.option("--all", "import_all", is_flag=True, help="Recursively import the full CLI command tree using nested help output.")
 @click.option("--apply", is_flag=True, help="Write the imported source operation and mount into config.")
 @click.option("--save-manifest", "save_manifest_path", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Optional manifest file to write instead of storing the operation inline.")
 @click.option("--mount/--no-mount", "create_mount", default=True, show_default=True, help="Also create a mount for the imported operation.")
@@ -1193,6 +1221,7 @@ def import_cli_command(
     schema_command: Optional[str],
     schema_file: Optional[Path],
     schema_format: str,
+    import_all: bool,
     apply: bool,
     save_manifest_path: Optional[Path],
     create_mount: bool,
@@ -1211,6 +1240,83 @@ def import_cli_command(
             explicit_config_path=str(state.config_path) if state.config_path else None,
             requested_profile=state.profile,
         )
+        if import_all:
+            if import_strategy != "help":
+                raise RegistryError(
+                    "--all currently supports --from help only",
+                    code="import_all_strategy_unsupported",
+                    suggestions=["改用 `cts import cli <source> <cmd> --all --from help --apply`。"],
+                )
+            if operation_id is not None or mount_id is not None or command_path_value is not None or title is not None:
+                raise RegistryError(
+                    "--all cannot be combined with per-command identity overrides",
+                    code="import_all_overrides_not_supported",
+                    suggestions=["去掉 --operation-id / --mount-id / --path / --title，改用 --under 或 --prefix 控制整棵树路径。"],
+                )
+            plan = _prepare_cli_import_tree_plan(
+                app,
+                source_name=source_name,
+                command_argv=list(command_argv),
+                executable=executable,
+                risk=risk,
+                output_mode=output_mode,
+                help_flag=help_flag,
+                create_mount=create_mount,
+                under_values=under_values,
+                prefix=prefix,
+                save_manifest_path=save_manifest_path,
+            )
+            if not apply:
+                click.echo(
+                    render_payload(
+                        {
+                            "ok": True,
+                            "action": "import_cli_tree_preview",
+                            **plan,
+                        },
+                        output_format,
+                    )
+                )
+                return
+
+            manifest_write = dict(plan["manifest_write"])
+            write_manifest_operations(
+                Path(manifest_write["resolved_path"]),
+                list(manifest_write["operations"]),
+                executable=manifest_write.get("executable"),
+            )
+
+            baseline_conflicts = conflict_signatures(app.catalog.conflicts)
+
+            def mutator(payload: Dict[str, Any]) -> None:
+                _apply_cli_import_tree_plan(payload, plan)
+
+            updated, compiled_app = apply_update(
+                session,
+                mutator,
+                compile_runtime=True,
+                profile=state.profile,
+                baseline_conflicts=baseline_conflicts,
+            )
+
+            click.echo(
+                render_payload(
+                    {
+                        "ok": True,
+                        "action": "import_cli_tree_apply",
+                        "file": str(session.target_path),
+                        "created_file": session.created,
+                        "warnings": list(session.warnings),
+                        **plan,
+                        "source_config": _strip_internal_metadata(updated.get("sources", {}).get(source_name, {})),
+                        "mount_count": len(plan.get("mounts") or []),
+                        "operation_count": len(plan.get("operations") or []),
+                    },
+                    output_format,
+                )
+            )
+            return
+
         plan = _prepare_cli_import_plan(
             app,
             source_name=source_name,
@@ -1286,6 +1392,64 @@ def import_cli_command(
         click.echo(render_payload(payload, output_format))
     except Exception as exc:
         _fail(ctx, exc, "import_cli", output_format)
+
+
+@import_group.command("shell")
+@click.argument("source_name")
+@click.option("--exec", "exec_command", default=None, help="Shell command string to execute.")
+@click.option(
+    "--script-file",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    default=None,
+    help="Path to a shell script file to execute.",
+)
+@click.option("--shell-bin", default="/bin/sh", show_default=True, help="Shell executable used to run the command.")
+@click.option("--under", "under_values", multiple=True, help="Command path prefix for the generated mount.")
+@click.option("--title", default=None, help="Optional operation title.")
+@click.option("--description", default=None, help="Optional operation description.")
+@click.option("--risk", type=click.Choice(["read", "write", "destructive"]), default="read", show_default=True)
+@click.option("--output-mode", type=click.Choice(["text", "json"]), default="text", show_default=True)
+@click.option("--apply", is_flag=True, help="Write the shell source and mount into config.")
+@click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="json")
+@click.pass_context
+def import_shell_command(
+    ctx: click.Context,
+    source_name: str,
+    exec_command: Optional[str],
+    script_file: Optional[Path],
+    shell_bin: str,
+    under_values: tuple[str, ...],
+    title: Optional[str],
+    description: Optional[str],
+    risk: str,
+    output_mode: str,
+    apply: bool,
+    output_format: str,
+) -> None:
+    """Import a shell command string as a runnable mount."""
+    try:
+        if bool(exec_command) == bool(script_file):
+            raise RegistryError(
+                "exactly one of --exec or --script-file is required",
+                code="shell_import_source_required",
+                suggestions=["传入 --exec 'echo hello'，或传入 --script-file ./script.sh。"],
+            )
+        payload = _execute_import_shell(
+            ctx,
+            source_name=source_name,
+            exec_command=exec_command,
+            script_file=script_file,
+            shell_bin=shell_bin,
+            under_values=under_values,
+            title=title,
+            description=description,
+            risk=risk,
+            output_mode=output_mode,
+            apply=apply,
+        )
+        click.echo(render_payload(payload, output_format))
+    except Exception as exc:
+        _fail(ctx, exc, "import_shell", output_format)
 
 
 @import_group.command("mcp")
@@ -1591,7 +1755,9 @@ def _execute_import_mcp(
 
     if compiled_app:
         try:
-            compiled_app.sync(source_name)
+            sync_result = compiled_app.sync(source_name)
+            sync_items = sync_result.get("items", [])
+            discovery = sync_items[0] if sync_items else {}
             operations = compiled_app.source_operations.get(source_name, {})
 
             mounts_to_create = []
@@ -1633,6 +1799,14 @@ def _execute_import_mcp(
                 "source_config": updated.get("sources", {}).get(source_name, {}),
                 "tools_count": len(operations),
                 "mounts_created": len(mounts_to_create),
+                "discovery": discovery,
+                "discovery_report_path": sync_result.get("report_path"),
+                "capability_snapshot_path": sync_result.get("capability_snapshot_path"),
+                **(
+                    {"tools_import_error": discovery.get("error")}
+                    if discovery and not discovery.get("ok", True) and discovery.get("error")
+                    else {}
+                ),
             }
         except Exception as exc:
             return {
@@ -1655,6 +1829,339 @@ def _execute_import_mcp(
         "warnings": list(session.warnings),
         "source_config": updated.get("sources", {}).get(source_name, {}),
     }
+
+
+def _execute_import_shell(
+    ctx: click.Context,
+    *,
+    source_name: str,
+    exec_command: Optional[str],
+    script_file: Optional[Path],
+    shell_bin: str,
+    under_values: tuple[str, ...],
+    title: Optional[str],
+    description: Optional[str],
+    risk: str,
+    output_mode: str,
+    apply: bool,
+) -> Dict[str, Any]:
+    state = _get_state(ctx)
+    session = prepare_edit_session(state.config_path, target_file=None)
+    app = CTSApp(
+        session.loaded,
+        active_profile=state.profile,
+        explicit_config_path=str(state.config_path) if state.config_path else None,
+        requested_profile=state.profile,
+    )
+
+    if source_name in app.config.sources:
+        raise RegistryError(f"source already exists: {source_name}", code="source_exists")
+
+    mount_id = source_name.replace(".", "-").replace("_", "-")
+    if app.catalog.find_by_id(mount_id) is not None:
+        raise RegistryError(f"mount already exists: {mount_id}", code="mount_exists")
+
+    operation_id = "run"
+    command_path = list(_split_command_segments(under_values)) + [source_name]
+    script_path = script_file.resolve() if script_file else None
+    source_label = exec_command if exec_command else str(script_path)
+    argv_template = [shell_bin, "-c", exec_command] if exec_command else [shell_bin, str(script_path)]
+    source_payload = {
+        "type": "shell",
+        "enabled": True,
+        "executable": shell_bin,
+        "operations": {
+            operation_id: {
+                "title": title or source_name,
+                "description": description or f"Execute shell command: {source_label}",
+                "risk": risk,
+                "input_schema": {"type": "object", "properties": {}},
+                "provider_config": {
+                    "argv_template": argv_template,
+                    "output_mode": output_mode,
+                },
+            }
+        },
+    }
+    mount_payload = {
+        "id": mount_id,
+        "source": source_name,
+        "operation": operation_id,
+        "command": {"path": command_path},
+        "machine": {"stable_name": f"{source_name}.run"},
+        "help": {
+            "summary": title or source_name,
+            "description": description or f"Execute shell command: {source_label}",
+            "notes": [f"Shell executable: {shell_bin}"],
+        },
+    }
+    plan = {
+        "source": {"name": source_name, "type": "shell"},
+        "operation_id": operation_id,
+        "mount_id": mount_id,
+        "exec": exec_command,
+        "script_file": str(script_path) if script_path else None,
+        "shell_bin": shell_bin,
+        "command_path": command_path,
+        "source_config": source_payload,
+        "mount_config": mount_payload,
+    }
+
+    if not apply:
+        return {
+            "ok": True,
+            "action": "import_shell_preview",
+            **plan,
+        }
+
+    baseline_conflicts = conflict_signatures(app.catalog.conflicts)
+
+    def mutator(payload: Dict[str, Any]) -> None:
+        sources = ensure_mapping(payload, "sources")
+        sources[source_name] = source_payload
+        mounts = ensure_list(payload, "mounts")
+        mounts.append(mount_payload)
+
+    updated, compiled_app = apply_update(
+        session,
+        mutator,
+        compile_runtime=True,
+        profile=state.profile,
+        baseline_conflicts=baseline_conflicts,
+    )
+    compiled_mount = compiled_app.catalog.find_by_id(mount_id) if compiled_app else None
+
+    return {
+        "ok": True,
+        "action": "import_shell_apply",
+        "file": str(session.target_path),
+        "created_file": session.created,
+        "warnings": list(session.warnings),
+        "source": {"name": source_name, "type": "shell"},
+        "operation_id": operation_id,
+        "mount_id": mount_id,
+        "exec": exec_command,
+        "script_file": str(script_path) if script_path else None,
+        "shell_bin": shell_bin,
+        "command_path": command_path,
+        "source_config": _strip_internal_metadata(updated.get("sources", {}).get(source_name, {})),
+        "mount_config": _find_mount_payload(updated.get("mounts", []), mount_id),
+        "compiled": build_mount_details(compiled_app, compiled_mount) if compiled_app and compiled_mount else None,
+    }
+
+
+def _prepare_cli_import_tree_plan(
+    app: CTSApp,
+    *,
+    source_name: str,
+    command_argv: List[str],
+    executable: Optional[str],
+    risk: str,
+    output_mode: str,
+    help_flag: str,
+    create_mount: bool,
+    under_values: tuple[str, ...],
+    prefix: Optional[str],
+    save_manifest_path: Optional[Path],
+) -> Dict[str, Any]:
+    existing_source = app.config.sources.get(source_name)
+    if existing_source and existing_source.type not in {"cli", "shell"}:
+        raise RegistryError(
+            f"source '{source_name}' is not a cli/shell source",
+            code="source_type_not_supported",
+            suggestions=["改用新的 source 名称，或继续使用原来的 provider 专用导入命令。"],
+        )
+
+    final_command = list(command_argv)
+    source_executable = executable or (existing_source.executable if existing_source else None)
+    if not final_command:
+        if source_executable:
+            final_command = [source_executable]
+        else:
+            raise RegistryError(
+                "command argv required",
+                code="command_argv_required",
+                suggestions=["传入要导入的命令，例如 `cts import cli aac aac --all --apply`。"],
+            )
+    if source_executable is None and final_command:
+        source_executable = final_command[0]
+
+    tree = _discover_cli_help_tree(final_command, help_flag=help_flag)
+    if not tree["leaves"]:
+        raise RegistryError(
+            f"no executable leaf commands discovered for source '{source_name}'",
+            code="import_all_no_leaf_commands",
+            suggestions=["确认该 CLI 的每层 help 都会列出子命令，或改为单条 `cts import cli` 导入。"],
+        )
+
+    imported_operations = []
+    source_operations: Dict[str, Dict[str, Any]] = {}
+    for leaf in tree["leaves"]:
+        operation_id = _derive_operation_id_from_tokens(leaf["relative_tokens"])
+        import_result = import_cli_help(
+            operation_id=operation_id,
+            command_argv=list(leaf["command_argv"]),
+            help_flag=help_flag,
+            risk=risk,
+            output_mode=output_mode,
+            title=None,
+        )
+        imported_operation = dict(import_result.operation)
+        imported_operations.append(imported_operation)
+        source_operations[operation_id] = _build_inline_source_operation(imported_operation)
+
+    manifest_path = save_manifest_path or Path(f"{source_name}-manifest.yaml")
+    manifest_write = {
+        "path": str(manifest_path),
+        "resolved_path": str(app.resolve_path(str(manifest_path), owner=existing_source)),
+        "operations": imported_operations,
+        "executable": source_executable,
+    }
+
+    mounts = []
+    warnings = list(tree["warnings"])
+    if create_mount:
+        mounts, mount_warnings = _build_cli_import_tree_mounts(
+            app,
+            source_name=source_name,
+            operations=imported_operations,
+            under_values=under_values,
+            prefix=prefix,
+            root_command=final_command,
+        )
+        warnings.extend(mount_warnings)
+
+    source_preview = {
+        "name": source_name,
+        "existing": existing_source is not None,
+        "type": existing_source.type if existing_source else "cli",
+        "executable": source_executable,
+        "stores_operation_inline": False,
+        "manifest_path": manifest_write["path"],
+        "operation_count": len(imported_operations),
+        "operations_preview": sorted(source_operations.keys())[:50],
+        "truncated": len(imported_operations) > 50,
+    }
+
+    return {
+        "source": source_preview,
+        "command_argv": final_command,
+        "strategy": "help_tree",
+        "operations": imported_operations,
+        "mounts": mounts,
+        "tree": {
+            "group_count": len(tree["groups"]),
+            "leaf_count": len(tree["leaves"]),
+            "max_depth": tree["max_depth"],
+            "groups": tree["groups"][:50],
+            "leaves": [item["relative_tokens"] for item in tree["leaves"][:50]],
+            "truncated": len(tree["groups"]) > 50 or len(tree["leaves"]) > 50,
+        },
+        "manifest_write": manifest_write,
+        "warnings": warnings,
+    }
+
+
+def _discover_cli_help_tree(command_argv: List[str], *, help_flag: str) -> Dict[str, Any]:
+    queue: List[List[str]] = [list(command_argv)]
+    seen: set[tuple[str, ...]] = set()
+    groups: List[List[str]] = []
+    leaves: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+    max_depth = 0
+
+    while queue:
+        current = queue.pop(0)
+        current_key = tuple(current)
+        if current_key in seen:
+            continue
+        seen.add(current_key)
+        relative_tokens = _relative_cli_tokens_from_base(current, command_argv)
+        max_depth = max(max_depth, len(relative_tokens))
+        node = inspect_cli_help(command_argv=current, help_flag=help_flag)
+        if node.subcommands:
+            if relative_tokens:
+                groups.append(relative_tokens)
+            for subcommand in node.subcommands:
+                candidate = current + [subcommand]
+                candidate_key = tuple(candidate)
+                if candidate_key in seen:
+                    continue
+                queue.append(candidate)
+            continue
+        if relative_tokens:
+            leaves.append({"command_argv": list(current), "relative_tokens": relative_tokens})
+
+    if len(seen) > 500:
+        warnings.append("discovered more than 500 help nodes; preview output was truncated")
+
+    return {
+        "groups": groups,
+        "leaves": leaves,
+        "warnings": warnings,
+        "max_depth": max_depth,
+    }
+
+
+def _build_cli_import_tree_mounts(
+    app: CTSApp,
+    *,
+    source_name: str,
+    operations: List[Dict[str, Any]],
+    under_values: tuple[str, ...],
+    prefix: Optional[str],
+    root_command: List[str],
+) -> tuple[List[Dict[str, Any]], List[str]]:
+    reserved_mount_ids = {mount.mount_id for mount in app.catalog.mounts}
+    reserved_paths = {tuple(mount.command_path) for mount in app.catalog.mounts}
+    mounts: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+    mount_prefix = prefix or source_name.replace("_", "-").replace(".", "-")
+    under_tokens = _split_command_segments(list(under_values))
+
+    for operation in operations:
+        operation_id = str(operation["id"])
+        existing_mount = app.catalog.find_by_source_and_operation(source_name, operation_id)
+        if existing_mount is not None:
+            warnings.append(f"mount already exists for {source_name}.{operation_id}; reusing {existing_mount.mount_id}")
+            continue
+
+        relative_tokens = _relative_cli_tokens_from_base(list(operation.get("command_argv") or root_command), root_command)
+        base_mount_id = f"{mount_prefix}-{operation_id.replace('.', '-').replace('_', '-')}"
+        base_command_path = list(under_tokens) + relative_tokens if under_tokens else [source_name] + relative_tokens
+        final_mount_id, final_command_path, warning = _make_mount_identity_unique_respecting(
+            app,
+            base_mount_id,
+            base_command_path,
+            reserved_mount_ids=reserved_mount_ids,
+            reserved_paths=reserved_paths,
+        )
+        reserved_mount_ids.add(final_mount_id)
+        reserved_paths.add(tuple(final_command_path))
+
+        mount_entry: Dict[str, Any] = {
+            "id": final_mount_id,
+            "source": source_name,
+            "operation": operation_id,
+            "command": {"path": final_command_path},
+        }
+
+        help_entry: Dict[str, Any] = {}
+        if operation.get("title"):
+            help_entry["summary"] = operation["title"]
+        if operation.get("description"):
+            help_entry["description"] = operation["description"]
+        if help_entry:
+            mount_entry["help"] = help_entry
+
+        if operation.get("risk") and operation.get("risk") != "read":
+            mount_entry["policy"] = {"risk": operation["risk"]}
+
+        mounts.append(mount_entry)
+        if warning:
+            warnings.append(f"{operation_id}: {warning}")
+
+    return mounts, warnings
 
 
 @manage.group()
@@ -3175,7 +3682,7 @@ def build_dynamic_command(app: CTSApp, mount) -> click.Command:
         operation_id=mount.operation.id,
         data={"schema_provenance": help_payload.get("schema_provenance")},
     )
-    return click.Command(
+    return GroupedOptionCommand(
         name=mount.command_path[-1],
         params=build_click_params(mount),
         callback=_dynamic_callback(mount),
@@ -3646,12 +4153,34 @@ def _build_cli_import_mount_plan(
 
 
 def _make_mount_identity_unique(app: CTSApp, mount_id: str, command_path: List[str]) -> tuple[str, List[str], Optional[str]]:
+    return _make_mount_identity_unique_respecting(
+        app,
+        mount_id,
+        command_path,
+        reserved_mount_ids=set(),
+        reserved_paths=set(),
+    )
+
+
+def _make_mount_identity_unique_respecting(
+    app: CTSApp,
+    mount_id: str,
+    command_path: List[str],
+    *,
+    reserved_mount_ids: set[str],
+    reserved_paths: set[tuple[str, ...]],
+) -> tuple[str, List[str], Optional[str]]:
     candidate_mount_id = mount_id
     candidate_path = list(command_path)
     suffix = 2
     warning = None
 
-    while app.catalog.find_by_id(candidate_mount_id) is not None or app.catalog.find_by_path(candidate_path) is not None:
+    while (
+        app.catalog.find_by_id(candidate_mount_id) is not None
+        or app.catalog.find_by_path(candidate_path) is not None
+        or candidate_mount_id in reserved_mount_ids
+        or tuple(candidate_path) in reserved_paths
+    ):
         warning = "mount id or command path already exists; generated a numeric suffix automatically"
         candidate_mount_id = f"{mount_id}-{suffix}"
         candidate_path = list(command_path)
@@ -3662,10 +4191,29 @@ def _make_mount_identity_unique(app: CTSApp, mount_id: str, command_path: List[s
 
 
 def _derive_operation_id_from_command(command_argv: List[str]) -> str:
-    candidates = [token for token in command_argv if token and not token.startswith("-")]
-    if not candidates:
+    relative_tokens = _relative_cli_tokens(command_argv)
+    if not relative_tokens:
         return "command"
-    return candidates[-1].replace("-", "_").replace(".", "_")
+    return _derive_operation_id_from_tokens(relative_tokens)
+
+
+def _derive_operation_id_from_tokens(tokens: List[str]) -> str:
+    if not tokens:
+        return "command"
+    return "_".join(token.replace("-", "_").replace(".", "_") for token in tokens)
+
+
+def _relative_cli_tokens(command_argv: List[str]) -> List[str]:
+    candidates = [token for token in command_argv if token and not token.startswith("-")]
+    if len(candidates) <= 1:
+        return []
+    return list(candidates[1:])
+
+
+def _relative_cli_tokens_from_base(command_argv: List[str], base_command_argv: List[str]) -> List[str]:
+    if len(command_argv) >= len(base_command_argv) and command_argv[: len(base_command_argv)] == base_command_argv:
+        return [token for token in command_argv[len(base_command_argv) :] if token and not token.startswith("-")]
+    return _relative_cli_tokens(command_argv)
 
 
 def _apply_cli_import_plan(payload: Dict[str, Any], plan: Dict[str, Any]) -> None:
@@ -3701,6 +4249,38 @@ def _apply_cli_import_plan(payload: Dict[str, Any], plan: Dict[str, Any]) -> Non
     if mount_plan and not mount_plan.get("existing"):
         mounts = ensure_list(payload, "mounts")
         mounts.append(dict(mount_plan))
+
+
+def _apply_cli_import_tree_plan(payload: Dict[str, Any], plan: Dict[str, Any]) -> None:
+    source_plan = dict(plan["source"])
+    source_name = str(source_plan["name"])
+    sources = ensure_mapping(payload, "sources")
+    source_payload = sources.get(source_name)
+    if source_payload is None:
+        source_payload = {"type": source_plan["type"], "enabled": True}
+        sources[source_name] = source_payload
+    if not isinstance(source_payload, dict):
+        raise ConfigEditError(f"source payload must be a mapping: {source_name}")
+
+    source_payload.setdefault("type", source_plan["type"])
+    if source_plan.get("executable"):
+        source_payload["executable"] = source_plan["executable"]
+
+    manifest_write = dict(plan["manifest_write"])
+    discovery = ensure_mapping(source_payload, "discovery")
+    discovery["manifest"] = manifest_write["path"]
+
+    mounts = ensure_list(payload, "mounts")
+    existing_mount_ids = {
+        item.get("id")
+        for item in mounts
+        if isinstance(item, dict) and item.get("id")
+    }
+    for mount in plan.get("mounts") or []:
+        if mount.get("id") in existing_mount_ids:
+            continue
+        mounts.append(dict(mount))
+        existing_mount_ids.add(mount.get("id"))
 
 
 def _parse_assignment(raw: str) -> tuple[str, Any]:

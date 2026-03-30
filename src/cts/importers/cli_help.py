@@ -5,7 +5,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -18,6 +18,14 @@ class CLIHelpImportResult:
     help_command: List[str]
     help_text: str
     operation: Dict[str, Any]
+
+
+@dataclass
+class CLIHelpTreeNode:
+    command_argv: List[str]
+    help_command: List[str]
+    help_text: str
+    subcommands: List[str]
 
 
 def build_imported_cli_operation(
@@ -63,20 +71,7 @@ def import_cli_help(
     output_mode: str = "text",
     title: Optional[str] = None,
 ) -> CLIHelpImportResult:
-    help_command = list(command_argv) + [help_flag]
-    completed = subprocess.run(
-        help_command,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        stderr = completed.stderr.strip()
-        stdout = completed.stdout.strip()
-        message = stderr or stdout or "CLI help command failed"
-        raise RuntimeError(message)
-
-    help_text = completed.stdout
+    help_command, help_text = _run_help_command(command_argv, help_flag=help_flag)
     parsed = _parse_help_output(help_text)
     operation = build_imported_cli_operation(
         operation_id=operation_id,
@@ -92,6 +87,20 @@ def import_cli_help(
         },
     )
     return CLIHelpImportResult(command_argv=list(command_argv), help_command=help_command, help_text=help_text, operation=operation)
+
+
+def inspect_cli_help(
+    *,
+    command_argv: List[str],
+    help_flag: str = "--help",
+) -> CLIHelpTreeNode:
+    help_command, help_text = _run_help_command(command_argv, help_flag=help_flag)
+    return CLIHelpTreeNode(
+        command_argv=list(command_argv),
+        help_command=help_command,
+        help_text=help_text,
+        subcommands=extract_help_subcommands(help_text),
+    )
 
 
 def merge_operation_into_manifest(path: Path, operation: Dict[str, Any], *, executable: Optional[str] = None) -> Dict[str, Any]:
@@ -118,6 +127,15 @@ def merge_operation_into_manifest(path: Path, operation: Dict[str, Any], *, exec
         operations.append(operation)
     payload["operations"] = operations
 
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return payload
+
+
+def write_manifest_operations(path: Path, operations: List[Dict[str, Any]], *, executable: Optional[str] = None) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {"version": 1, "operations": list(operations)}
+    if executable:
+        payload["executable"] = executable
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return payload
@@ -175,6 +193,53 @@ def _parse_help_output(help_text: str) -> Dict[str, Any]:
         "option_bindings": option_bindings,
         "option_order": option_order,
     }
+
+
+def extract_help_subcommands(help_text: str) -> List[str]:
+    lines = help_text.splitlines()
+    section_index = _find_section_index(
+        lines,
+        {
+            "commands:",
+            "subcommands:",
+            "available commands:",
+            "available subcommands:",
+        },
+    )
+    if section_index is None:
+        return []
+
+    subcommands: List[str] = []
+    for line in lines[section_index + 1 :]:
+        if not line.strip():
+            if subcommands:
+                break
+            continue
+        if not line.startswith(" "):
+            break
+        match = re.match(r"^\s{2,}([A-Za-z0-9][A-Za-z0-9._:-]*)\b", line)
+        if not match:
+            continue
+        name = match.group(1).strip()
+        if name and name not in subcommands:
+            subcommands.append(name)
+    return subcommands
+
+
+def _run_help_command(command_argv: List[str], *, help_flag: str) -> Tuple[List[str], str]:
+    help_command = list(command_argv) + [help_flag]
+    completed = subprocess.run(
+        help_command,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        stderr = completed.stderr.strip()
+        stdout = completed.stdout.strip()
+        message = stderr or stdout or "CLI help command failed"
+        raise RuntimeError(message)
+    return help_command, completed.stdout
 
 
 def _find_usage_index(lines: List[str]) -> Optional[int]:

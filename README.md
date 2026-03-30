@@ -1,363 +1,197 @@
 # cts
 
-[中文](#中文) | [English](#english)
+[中文文档](README.zh.md)
 
-## 中文
+`cts` turns heterogeneous capabilities into stable commands.
 
-**一句话介绍**：`cts` 让你用一条命令把本地 CLI、API、脚本变成可执行的命令，无需先写配置。
+You can compile local CLIs, shell scripts, HTTP APIs, OpenAPI specs, GraphQL services, and MCP servers into one consistent command surface, then expose them through CLI, invoke, HTTP, and UI.
 
-### 30 秒上手
+## Recommended Path
 
-```bash
-# 安装
-pip install cts
+If you're new to `cts`, this order works best:
 
-# 导入一个本地命令（无需配置文件）
-cts import cli mycmd --exec "echo hello" --apply
+1. Import one local shell command and see it run immediately
+2. Import one local CLI command
+3. Try MCP / HTTP / OpenAPI / GraphQL
+4. Move on to mounts, execution, plugins, and hooks
 
-# 执行
-cts mycmd
-# 输出: hello
-```
+Useful entry points:
 
-就这样。不需要配置文件，不需要 manifest，先跑通再说。
+- [Usage Guide](docs/usage/README.md)
+- [Quickstart](docs/usage/01-quickstart/README.md)
+- [Local CLI](docs/usage/02-local-cli/README.md)
+- [Shell](docs/usage/03-shell/README.md)
+- [HTTP](docs/usage/04-http/README.md)
+- [OpenAPI](docs/usage/05-openapi/README.md)
+- [GraphQL](docs/usage/06-graphql/README.md)
+- [MCP](docs/usage/07-mcp/README.md)
+- [Mounts](docs/usage/08-mounts/README.md)
+- [Execution](docs/usage/09-execution/README.md)
+- [Plugins](docs/usage/10-plugins/README.md)
+- [Hooks](docs/usage/11-hooks/README.md)
 
----
+## Start With A One-Line Shell Import
 
-### 还能做什么
-
-```bash
-# 导入一个已有 CLI 的某个命令
-cts import cli greet --exec "echo Hello, \$1!" --apply
-cts greet World
-# 输出: Hello, World!
-
-# 快捷导入 MCP Server（无需配置文件）
-cts import mcp 12306 --server-config '{"type":"sse","url":"https://mcp.api-inference.modelscope.net/6d85ac1213db43/sse"}' --apply
-# 可以看到已经挂载成功
-cts 12306 --help 
-
-# 看看当前挂载了什么
-cts manage mount list
-
-# 用稳定 ID 调用
-cts manage invoke greet --input-json '{"args":["World"]}'
-
-# 预览执行计划
-cts manage explain greet
-```
-
----
-
-### 进阶：使用配置文件
-
-当你需要管理多个命令、团队共享配置时，可以用 YAML 配置文件。
-
-最小示例：
-
-```yaml
-# cts.yaml
-version: 1
-sources:
-  demo:
-    type: cli
-    executable: python3
-    operations:
-      echo:
-        input_schema:
-          type: object
-          properties:
-            text: { type: string }
-        provider_config:
-          argv_template: ["python3", "-c", "print('{text}')"]
-
-mounts:
-  - id: demo-echo
-    source: demo
-    operation: echo
-    command: { path: [demo, echo] }
-```
+This is the fastest starting point because it does not depend on external services or a config file you write by hand.
 
 ```bash
-cts --config cts.yaml demo echo --text hello
+cts import shell hello --exec 'echo Hello cts!' --apply
+cts hello
 ```
 
-MCP Server 示例：
-
-```yaml
-# cts.yaml
-version: 1
-sources:
-  12306_mcp:
-    type: mcp
-    adapter: mcp-cli
-    config_file: ./servers.json
-    server: 12306-mcp
-    discovery:
-      mode: live
-
-# servers.json
-{
-  "mcpServers": {
-    "12306-mcp": {
-      "type": "sse",
-      "url": "https://mcp.api-inference.modelscope.net/6d85ac1213db43/sse"
-    }
-  }
-}
-```
+Then inspect the generated dynamic command:
 
 ```bash
-# 批量导入 MCP tools
-cts --config cts.yaml manage mount import 12306_mcp --under 12306
-
-# 执行导入的工具
-cts --config cts.yaml 12306 <tool-name> --param value
+cts hello --help
+cts explain hello
 ```
 
-完整示例见 [examples/](examples/)。
+This gives you a concrete model of:
 
----
+- source: `hello`
+- operation: `run`
+- mount: `hello`
+- command path: `hello`
 
-### 架构概念（了解即可）
+## Import A Local CLI
 
-`cts` 的核心模型：
+The most common entry point is:
 
+```bash
+cts import cli <source-name> <command> [subcommand...] --apply
 ```
+
+Example:
+
+```bash
+cts import cli git-status git status --apply
+cts git-status --help
+cts git-status
+```
+
+To import a full command tree:
+
+```bash
+cts import cli git git --all --apply --under git
+```
+
+Continue with [Local CLI](docs/usage/02-local-cli/README.md).
+
+## Import An MCP Server
+
+The shortest path is:
+
+```bash
+cts import mcp my-mcp \
+  --server-config '{"type":"sse","url":"https://mcp.api-inference.modelscope.net/6d85ac1213db43/sse"}' \
+  --apply
+```
+
+Then check what was discovered:
+
+```bash
+cts manage source show my-mcp --format json
+cts manage source test my-mcp --discover --format json
+cts my-mcp --help
+```
+
+Continue with [MCP](docs/usage/07-mcp/README.md).
+
+## Core Model
+
+```text
 source -> operation -> mount -> surface
 ```
 
-- `source`：能力来源（CLI、HTTP API、MCP Server 等）
-- `operation`：来源中的具体操作
-- `mount`：绑定稳定命令路径和 ID
-- `surface`：暴露方式（CLI、HTTP、UI）
+- `source`: where the capability comes from
+- `operation`: one concrete action in that source
+- `mount`: stable id and command path bound to the operation
+- `surface`: how the mount is exposed
 
-这些概念在你需要复杂配置时才有意义，简单场景无需关心。
-
----
-
-### 支持的能力来源
-
-| 类型 | 说明 |
-|------|------|
-| `cli` | 本地命令行工具 |
-| `shell` | Shell 脚本 |
-| `http` | HTTP API |
-| `openapi` | OpenAPI 规范 |
-| `graphql` | GraphQL 服务 |
-| `mcp` | MCP Server |
-
----
-
-### UI 控制台
+## Common Commands
 
 ```bash
-# 启动 Web UI
-cts manage serve http --ui --open
+cts manage source show <source> --format json
+cts manage source test <source> --discover --format json
+cts manage mount list --format json
+cts manage invoke <mount-id> --input-json '{"key":"value"}' --format json
+cts explain <mount-id> --input-json '{"key":"value"}'
 ```
 
-访问 `http://localhost:8000` 查看 sources、mounts、执行历史等。
-
----
-
-### 文档
-
-- [使用指南](docs/usage/README.md) - 从简单到进阶的完整教程
-- [架构设计](docs/00-rfc-master-architecture.md) - 深入理解内部设计
-
----
-
-### 安装
+## Install
 
 ```bash
-# 从 PyPI（发布后）
 pip install cts
+```
 
-# 从源码
+From a wheel file:
+
+```bash
+python3 -m pip install ./dist/cts-0.1.0-py3-none-any.whl
+```
+
+From source:
+
+```bash
 git clone https://github.com/xlb1130/cli-tools.git
 cd cli-tools
-pip install -e ".[dev]"
+pip install -e .
 ```
 
----
-
-### 开发
+## Development
 
 ```bash
-pytest                    # 运行测试
-cd frontend/app && npm run build  # 构建前端
-```
-
----
-
-### 状态
-
-当前版本：`0.1.0`（MVP 阶段）
-
-核心功能已可用，更多能力持续演进中。
-
-### License
-
-[MIT](LICENSE)
-
----
-
-## English
-
-**One-liner**: `cts` turns local CLIs, APIs, and scripts into executable commands with a single command—no config required.
-
-### 30-Second Start
-
-```bash
-# Install
-pip install cts
-
-# Import a local command (no config file needed)
-cts import cli mycmd --exec "echo hello" --apply
-
-# Run it
-cts mycmd
-# Output: hello
-```
-
-That's it. No config files, no manifests—just run it first.
-
----
-
-### What Else Can It Do
-
-```bash
-# Import an existing CLI command
-cts import cli greet --exec "echo Hello, \$1!" --apply
-cts greet World
-# Output: Hello, World!
-
-# See what's mounted
-cts manage mount list
-
-# Invoke by stable ID
-cts manage invoke greet --input-json '{"args":["World"]}'
-
-# Preview execution plan
-cts manage explain greet
-```
-
----
-
-### Advanced: Config Files
-
-When you need to manage multiple commands or share config across a team.
-
-Minimal example:
-
-```yaml
-# cts.yaml
-version: 1
-sources:
-  demo:
-    type: cli
-    executable: python3
-    operations:
-      echo:
-        input_schema:
-          type: object
-          properties:
-            text: { type: string }
-        provider_config:
-          argv_template: ["python3", "-c", "print('{text}')"]
-
-mounts:
-  - id: demo-echo
-    source: demo
-    operation: echo
-    command: { path: [demo, echo] }
-```
-
-```bash
-cts --config cts.yaml demo echo --text hello
-```
-
-See [examples/](examples/) for more.
-
----
-
-### Architecture Concepts (Optional)
-
-Core model:
-
-```
-source -> operation -> mount -> surface
-```
-
-- `source`: where capabilities come from (CLI, HTTP API, MCP, etc.)
-- `operation`: a specific action in that source
-- `mount`: binds a stable command path and ID
-- `surface`: how it's exposed (CLI, HTTP, UI)
-
-These only matter for complex scenarios—simple cases don't need them.
-
----
-
-### Supported Sources
-
-| Type | Description |
-|------|-------------|
-| `cli` | Local CLI tools |
-| `shell` | Shell scripts |
-| `http` | HTTP APIs |
-| `openapi` | OpenAPI specs |
-| `graphql` | GraphQL services |
-| `mcp` | MCP Servers |
-
----
-
-### UI Console
-
-```bash
-# Start Web UI
-cts manage serve http --ui --open
-```
-
-Visit `http://localhost:8000` to inspect sources, mounts, run history, etc.
-
----
-
-### Documentation
-
-- [Usage Guide](docs/usage/README.md) - From simple to advanced
-- [Architecture](docs/00-rfc-master-architecture.md) - Deep dive into design
-
----
-
-### Install
-
-```bash
-# From PyPI (after release)
-pip install cts
-
-# From source
 git clone https://github.com/xlb1130/cli-tools.git
 cd cli-tools
-pip install -e ".[dev]"
+python3 -m pip install -e ".[dev]"
 ```
 
----
-
-### Development
+Recommended day-to-day workflow:
 
 ```bash
-pytest                    # Run tests
-cd frontend/app && npm run build  # Build frontend
+# Run the local source tree directly
+PYTHONPATH=src python3 -m cts.main --help
+
+# Try the shell quickstart against local code
+PYTHONPATH=src python3 -m cts.main import shell hello --exec 'echo Hello cts!' --apply
+PYTHONPATH=src python3 -m cts.main hello
 ```
 
----
+Useful validation commands:
 
-### Status
+```bash
+# Compile and lint config/runtime
+PYTHONPATH=src python3 -m cts.main config lint --compile --format json
 
-Current version: `0.1.0` (MVP)
+# Run tests
+python3 -m pytest
 
-Core features work; more capabilities evolving.
+# Run one focused test file
+python3 -m pytest tests/test_cli_management.py -q
+```
 
-### License
+Frontend development:
+
+```bash
+cd frontend/app
+npm install
+npm run build
+```
+
+If you want the installed `cts` command to use your local changes immediately:
+
+```bash
+python3 -m pip install -e .
+```
+
+This matters when you add CLI commands such as `cts import shell`, because your terminal may still be using an older installed package.
+
+## More
+
+- [Usage Guide](docs/usage/README.md)
+- [Architecture](docs/00-rfc-master-architecture.md)
+- [Install And Usage](docs/15-install-and-usage.md)
+
+## License
 
 [MIT](LICENSE)

@@ -242,13 +242,6 @@ export function ExtensionsPage() {
             description="这里展示的是 northbound 调试视角：哪些扩展已加载、provider 归属到哪里、hook 如何绑定，以及最近一次调度做了什么。"
           />
         </div>
-        <div className="hero-actions">
-          <div className="stack compact-stack">
-            <span className="sidebar-chip">Plugins {readySummary.plugin_count}</span>
-            <span className="sidebar-chip">Providers {readySummary.provider_count}</span>
-            <span className="sidebar-chip">Hooks {readySummary.enabled_hook_count}</span>
-          </div>
-        </div>
       </section>
 
       <section className="stats-grid">

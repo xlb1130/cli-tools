@@ -12,14 +12,14 @@ export function Panel({ title, subtitle, actions, kicker, children }: PanelProps
     <section className="panel">
       <div className="panel-accent" aria-hidden="true" />
       <div className="panel-header">
-        <div>
+        <div className="panel-header-copy">
           {kicker ? <p className="panel-kicker">{kicker}</p> : null}
           <h2>{title}</h2>
           {subtitle ? <p>{subtitle}</p> : null}
         </div>
         {actions ? <div className="panel-actions">{actions}</div> : null}
       </div>
-      <div className="panel-body">{children}</div>
+      <div className="panel-body panel-body-content">{children}</div>
     </section>
   );
 }
