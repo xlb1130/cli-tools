@@ -420,6 +420,7 @@ mounts: []
         [
             "--config",
             str(config_path),
+            "manage",
             "source",
             "import-help",
             "demo_cli",
@@ -535,7 +536,7 @@ def test_elapsed_status_updates_message_with_elapsed_time(monkeypatch):
     assert any("elapsed" in item for item in updates)
 
 
-def test_progress_steps_rich_description_includes_step_index_and_elapsed(monkeypatch):
+def test_progress_steps_update_current_emits_text_progress(monkeypatch):
     class TTYBuffer:
         def write(self, data):
             return len(data)
@@ -546,65 +547,17 @@ def test_progress_steps_rich_description_includes_step_index_and_elapsed(monkeyp
         def isatty(self):
             return True
 
-    updates = []
-
-    class FakeProgress:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def add_task(self, description, total, completed):
-            updates.append(description)
-            return "task-1"
-
-        def update(self, task_id, **kwargs):
-            if "description" in kwargs:
-                updates.append(kwargs["description"])
-
-    class FakeConsole:
-        def __init__(self, stderr=True):
-            self.stderr = stderr
-
-        def print(self, message):
-            updates.append(str(message))
-
-    class FakeSpinnerColumn:
-        pass
-
-    class FakeBarColumn:
-        pass
-
-    class FakeTextColumn:
-        def __init__(self, template):
-            self.template = template
-
     monkeypatch.setattr(root_module.sys, "stderr", TTYBuffer())
     monkeypatch.setattr(root_module.time, "perf_counter", lambda: 42.0)
-
-    import types
-
-    fake_progress_module = types.SimpleNamespace(
-        Progress=FakeProgress,
-        SpinnerColumn=FakeSpinnerColumn,
-        BarColumn=FakeBarColumn,
-        TextColumn=FakeTextColumn,
-    )
-    fake_console_module = types.SimpleNamespace(Console=FakeConsole)
-
-    monkeypatch.setitem(sys.modules, "rich.progress", fake_progress_module)
-    monkeypatch.setitem(sys.modules, "rich.console", fake_console_module)
+    updates = []
+    monkeypatch.setattr(root_module.click, "echo", lambda message, err=False: updates.append(message))
 
     with root_module._ProgressSteps("text", "Demo Progress", ["alpha", "beta"]) as progress:
         progress.advance("Discovering subcommands")
         progress.update_current("Discovering subcommands (3 visited, 2 queued, 1 leaves)")
 
-    assert any("[1/2]" in item for item in updates)
-    assert any("elapsed 0.0s" in item for item in updates)
+    assert any("[1/2] Discovering subcommands" in item for item in updates)
+    assert any("3 visited, 2 queued, 1 leaves" in item for item in updates)
 
 
 CLI_TREE_SCRIPT = """
@@ -676,32 +629,10 @@ def test_import_cli_all_recursively_imports_leaf_commands(tmp_path: Path):
     assert remove_mount.operation.id == "admin_remove_user"
 
 
-def test_import_cli_all_uses_multistep_progress(tmp_path: Path, monkeypatch):
+def test_import_cli_all_returns_tree_summary(tmp_path: Path):
     script_path = tmp_path / "aac_cli.py"
     script_path.write_text(CLI_TREE_SCRIPT, encoding="utf-8")
     config_path = tmp_path / "cts.yaml"
-    captured = {}
-
-    class RecordingProgress:
-        def __init__(self, output_format, title, steps):
-            captured["title"] = title
-            captured["steps"] = list(steps)
-            captured["advanced"] = []
-            captured["updated"] = []
-
-        def __enter__(self):
-            return self
-
-        def advance(self, label=None):
-            captured["advanced"].append(label)
-
-        def update_current(self, label):
-            captured["updated"].append(label)
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-    monkeypatch.setattr(root_module, "_ProgressSteps", RecordingProgress)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -722,26 +653,11 @@ def test_import_cli_all_uses_multistep_progress(tmp_path: Path, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert captured["title"] == "Importing CLI tree 'aac'"
-    assert captured["steps"] == [
-        "Inspect root command",
-        "Discover subcommands",
-        "Import leaf operations",
-        "Prepare mounts",
-        "Write manifest",
-        "Compile config",
-    ]
-    assert captured["advanced"][:6] == [
-        "Inspecting root command",
-        "Discovering subcommands",
-        "Importing leaf operations",
-        "Preparing mounts",
-        "Writing manifest",
-        "Compiling config",
-    ]
-    assert any("Discovering subcommands" in item for item in captured["updated"])
-    assert any("Importing leaf operations" in item for item in captured["updated"])
-    assert any("Preparing mounts" in item for item in captured["updated"])
+    payload = json.loads(result.output)
+    assert payload["action"] == "import_cli_tree_apply"
+    assert payload["operation_count"] == 2
+    assert payload["mount_count"] == 2
+    assert payload["tree"]["leaf_count"] == 2
 
 
 def test_import_cli_all_group_help_uses_original_descriptions(tmp_path: Path):

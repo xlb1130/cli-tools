@@ -50,6 +50,27 @@ cd cli-tools
 pip install -e .
 ```
 
+## Provider-Driven Import
+
+`cts import` is now provider-driven:
+
+```bash
+cts import <provider-type> ...
+cts import wizard
+cts import wizard <provider-type>
+```
+
+Built-in provider types include:
+
+- `shell`
+- `cli`
+- `http`
+- `openapi`
+- `graphql`
+- `mcp`
+
+Plugin-provided provider types can also expose their own import command and wizard automatically.
+
 ## Start With A One-Line Shell Import
 
 This is the fastest starting point because it does not depend on external services or a config file you write by hand.

@@ -50,6 +50,27 @@ cd cli-tools
 pip install -e .
 ```
 
+## Provider 驱动的导入入口
+
+现在的 `cts import` 已经统一为 provider 驱动模型：
+
+```bash
+cts import <provider-type> ...
+cts import wizard
+cts import wizard <provider-type>
+```
+
+当前内置 provider 类型包括：
+
+- `shell`
+- `cli`
+- `http`
+- `openapi`
+- `graphql`
+- `mcp`
+
+如果是 plugin 注册出来的 provider，只要它实现了 import 能力，也会自动出现在 `cts import` 和 `cts import wizard` 里。
+
 ## 第一步：先跑通一个本地 shell 命令
 
 这是最快的起点，因为不依赖外部服务，也不需要你手写配置文件。

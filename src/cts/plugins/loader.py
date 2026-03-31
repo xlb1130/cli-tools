@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, Optional
 from cts.config.loader import LoadedConfig
 from cts.config.models import HookConfig, PluginConfig
 from cts.execution.errors import CTSStructuredError, ConfigError
+from cts.imports.models import ImportDescriptor, ImportPlan, ImportRequest
 from cts.models import ExecutionPlan, HelpDescriptor, InvokeResult, OperationDescriptor
 from cts.plugins.external import HookRegistration, SubprocessPlugin
 from cts.plugins.contracts import get_hook_contract
@@ -686,6 +687,14 @@ class ExternalProviderAdapter:
     def healthcheck(self, source_name: str, source_config: Any, app: Any) -> Dict:
         payload = self._call("healthcheck", source_name=source_name, source_config=source_config)
         return dict(payload) if isinstance(payload, Mapping) else {"ok": False, "result": payload}
+
+    def describe_import(self, app: Any) -> ImportDescriptor:
+        payload = self._call("describe_import")
+        return ImportDescriptor.model_validate(payload)
+
+    def plan_import(self, request: ImportRequest, app: Any) -> ImportPlan:
+        payload = self._call("plan_import", request=request)
+        return ImportPlan.model_validate(payload)
 
     def _call(self, method: str, **payload: Any) -> Any:
         result = self.plugin.invoke(

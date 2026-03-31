@@ -113,11 +113,11 @@ def build_click_params(mount: Any) -> List[click.Parameter]:
             help="Path to a JSON file containing the operation input payload.",
         ),
         click.Option(
-            ["--output", "output_format"],
+            ["--format", "--output", "output_format"],
             type=click.Choice(["text", "json"]),
-            default="text",
-            show_default=True,
-            help="Render output as text or structured JSON.",
+            default=None,
+            show_default=False,
+            help="Render output as text or structured JSON. Defaults to the active CLI output mode (text unless root --format overrides it).",
         ),
         click.Option(["--dry-run"], is_flag=True, help="Plan the request without executing it."),
         click.Option(

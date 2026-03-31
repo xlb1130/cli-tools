@@ -88,6 +88,7 @@ mounts:
         [
             "--config",
             str(config_path),
+            "manage",
             "source",
             "import-schema",
             "demo_cli",
@@ -149,6 +150,7 @@ mounts:
         [
             "--config",
             str(config_path),
+            "manage",
             "source",
             "import-schema",
             "demo_cli",
@@ -230,6 +232,7 @@ mounts: []
         [
             "--config",
             str(config_path),
+            "manage",
             "source",
             "import-schema",
             "demo_cli",

@@ -152,7 +152,7 @@ def parse_root_argv(argv: list[str]) -> Dict[str, Any]:
             parsed["profile"] = argv[index + 1]
             index += 2
             continue
-        if token == "--output" and index + 1 < len(argv):
+        if token in {"--format", "--output"} and index + 1 < len(argv):
             parsed["global_output"] = argv[index + 1]
             index += 2
             continue

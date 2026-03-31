@@ -1,19 +1,11 @@
 from __future__ import annotations
 
-import webbrowser
 from pathlib import Path
 from typing import Callable, Optional
 
 import click
 
-from cts.cli.lazy import (
-    build_app_summary,
-    build_reliability_status,
-    build_source_check_result,
-    create_http_server,
-    default_ui_dist_dir,
-    render_payload,
-)
+from cts.cli.lazy import build_app_summary, build_reliability_status, build_source_check_result
 from cts.execution.errors import RegistryError
 
 
@@ -23,6 +15,10 @@ def register_surface_commands(
     pass_app,
     fail: Callable,
     progress_steps: Callable,
+    create_http_server: Callable,
+    default_ui_dist_dir: Callable,
+    render_payload: Callable,
+    browser_opener: Callable,
 ) -> None:
     @manage_group.group()
     def serve() -> None:
@@ -83,7 +79,7 @@ def register_surface_commands(
         )
         if open_browser:
             try:
-                webbrowser.open(browser_url)
+                browser_opener(browser_url)
             except Exception:
                 pass
         try:

@@ -9,6 +9,16 @@ import httpx
 
 from cts.auth import apply_auth_to_request
 from cts.config.models import SourceConfig
+from cts.imports.models import (
+    ImportArgumentDescriptor,
+    ImportDescriptor,
+    ImportPlan,
+    ImportPostAction,
+    ImportRequest,
+    ImportWizardDescriptor,
+    ImportWizardField,
+    ImportWizardStep,
+)
 from cts.models import ExecutionPlan, InvokeRequest, InvokeResult, OperationDescriptor
 from cts.providers.base import ProviderError, build_help_descriptor
 from cts.providers.cli import operation_from_config
@@ -86,6 +96,72 @@ fragment TypeRef on __Type {
 
 class GraphQLProvider(HTTPProvider):
     provider_type = "graphql"
+
+    def describe_import(self, app: "CTSApp") -> ImportDescriptor:
+        return ImportDescriptor(
+            provider_type=self.provider_type,
+            title="GraphQL Endpoint",
+            summary="Import a GraphQL source from endpoint and schema info.",
+            arguments=[
+                ImportArgumentDescriptor(name="source_name", kind="argument", value_type="string", required=True),
+                ImportArgumentDescriptor(name="endpoint", kind="option", value_type="string", required=True),
+                ImportArgumentDescriptor(name="schema_file", kind="option", value_type="path", flags=["--schema-file", "schema_file"]),
+                ImportArgumentDescriptor(name="schema_url", kind="option", value_type="string", flags=["--schema-url", "schema_url"]),
+                ImportArgumentDescriptor(name="introspection", kind="option", value_type="choice", default="live", choices=["live", "disabled"]),
+                ImportArgumentDescriptor(name="mount_under", kind="option", value_type="string", flags=["--mount-under", "mount_under"]),
+            ],
+            wizard=ImportWizardDescriptor(
+                steps=[
+                    ImportWizardStep(
+                        id="graphql",
+                        title="GraphQL Import",
+                        fields=[
+                            ImportWizardField(name="source_name", label="Source name", required=True),
+                            ImportWizardField(name="endpoint", label="Endpoint", required=True),
+                            ImportWizardField(name="schema_file", label="Schema file", value_type="path"),
+                            ImportWizardField(name="schema_url", label="Schema URL"),
+                            ImportWizardField(name="introspection", label="Introspection", value_type="choice", default="live", choices=["live", "disabled"]),
+                            ImportWizardField(name="mount_under", label="Mount prefix"),
+                        ],
+                    )
+                ]
+            ),
+        )
+
+    def plan_import(self, request: ImportRequest, app: "CTSApp") -> ImportPlan:
+        values = dict(request.values)
+        source_name = request.source_name or str(values.get("source_name") or "")
+        schema: Dict[str, Any] = {}
+        if values.get("schema_file"):
+            schema["file"] = str(values["schema_file"])
+        if values.get("schema_url"):
+            schema["url"] = str(values["schema_url"])
+        introspection = str(values.get("introspection") or "live")
+        if introspection != "disabled":
+            schema["introspection"] = introspection
+        source_patch = {
+            "type": "graphql",
+            "endpoint": str(values.get("endpoint") or ""),
+            "schema": schema,
+        }
+        mount_under = [segment for segment in str(values.get("mount_under") or source_name).split() if segment]
+        return ImportPlan(
+            provider_type=self.provider_type,
+            source_name=source_name,
+            summary=f"Import GraphQL source '{source_name}'",
+            source_patch=source_patch,
+            post_compile_actions=[
+                ImportPostAction(action="sync_source", payload={"source_name": source_name}),
+                ImportPostAction(action="create_mounts_from_source_operations", payload={"source_name": source_name, "under": mount_under}),
+            ],
+            preview={
+                "ok": True,
+                "action": "import_graphql_preview",
+                "apply_action": "import_graphql_apply",
+                "source_name": source_name,
+                "source_config": source_patch,
+            },
+        )
 
     def discover(self, source_name: str, source_config: SourceConfig, app: "CTSApp") -> List[OperationDescriptor]:
         operations: List[OperationDescriptor] = []

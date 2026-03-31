@@ -11,6 +11,16 @@ import yaml
 
 from cts.auth import apply_auth_to_request
 from cts.config.models import SourceConfig
+from cts.imports.models import (
+    ImportArgumentDescriptor,
+    ImportDescriptor,
+    ImportPlan,
+    ImportPostAction,
+    ImportRequest,
+    ImportWizardDescriptor,
+    ImportWizardField,
+    ImportWizardStep,
+)
 from cts.models import ExecutionPlan, InvokeRequest, InvokeResult, OperationDescriptor
 from cts.providers.base import ProviderError, build_help_descriptor
 from cts.providers.cli import operation_from_config
@@ -22,6 +32,71 @@ HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"]
 
 class OpenAPIProvider(HTTPProvider):
     provider_type = "openapi"
+
+    def describe_import(self, app: "CTSApp") -> ImportDescriptor:
+        return ImportDescriptor(
+            provider_type=self.provider_type,
+            title="OpenAPI Spec",
+            summary="Import an OpenAPI source from a spec file or URL.",
+            arguments=[
+                ImportArgumentDescriptor(name="source_name", kind="argument", value_type="string", required=True),
+                ImportArgumentDescriptor(name="spec_file", kind="option", value_type="path", flags=["--spec-file", "spec_file"]),
+                ImportArgumentDescriptor(name="spec_url", kind="option", value_type="string", flags=["--spec-url", "spec_url"]),
+                ImportArgumentDescriptor(name="base_url", kind="option", value_type="string", flags=["--base-url", "base_url"]),
+                ImportArgumentDescriptor(name="mount_under", kind="option", value_type="string", flags=["--mount-under", "mount_under"]),
+            ],
+            wizard=ImportWizardDescriptor(
+                steps=[
+                    ImportWizardStep(
+                        id="openapi",
+                        title="OpenAPI Import",
+                        fields=[
+                            ImportWizardField(name="source_name", label="Source name", required=True),
+                            ImportWizardField(name="spec_file", label="Spec file", value_type="path"),
+                            ImportWizardField(name="spec_url", label="Spec URL"),
+                            ImportWizardField(name="base_url", label="Base URL override"),
+                            ImportWizardField(name="mount_under", label="Mount prefix"),
+                        ],
+                    )
+                ]
+            ),
+        )
+
+    def plan_import(self, request: ImportRequest, app: "CTSApp") -> ImportPlan:
+        values = dict(request.values)
+        source_name = request.source_name or str(values.get("source_name") or "")
+        spec: Dict[str, Any] = {}
+        if values.get("spec_file"):
+            spec["file"] = str(values["spec_file"])
+        if values.get("spec_url"):
+            spec["url"] = str(values["spec_url"])
+        if not spec:
+            raise ProviderError("spec_file or spec_url is required")
+        source_patch: Dict[str, Any] = {
+            "type": "openapi",
+            "spec": spec,
+            "discovery": {"mode": "live"},
+        }
+        if values.get("base_url"):
+            source_patch["base_url"] = str(values["base_url"])
+        mount_under = [segment for segment in str(values.get("mount_under") or source_name).split() if segment]
+        return ImportPlan(
+            provider_type=self.provider_type,
+            source_name=source_name,
+            summary=f"Import OpenAPI source '{source_name}'",
+            source_patch=source_patch,
+            post_compile_actions=[
+                ImportPostAction(action="sync_source", payload={"source_name": source_name}),
+                ImportPostAction(action="create_mounts_from_source_operations", payload={"source_name": source_name, "under": mount_under}),
+            ],
+            preview={
+                "ok": True,
+                "action": "import_openapi_preview",
+                "apply_action": "import_openapi_apply",
+                "source_name": source_name,
+                "source_config": source_patch,
+            },
+        )
 
     def discover(self, source_name: str, source_config: SourceConfig, app: "CTSApp") -> List[OperationDescriptor]:
         operations: List[OperationDescriptor] = []

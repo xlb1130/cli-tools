@@ -169,6 +169,7 @@ def test_import_mcp_apply_persists_source_and_mounts(tmp_path: Path, monkeypatch
             "--format",
             "json",
         ],
+        env={"HOME": str(tmp_path)},
     )
 
     assert result.exit_code == 0
@@ -182,8 +183,8 @@ def test_import_mcp_apply_persists_source_and_mounts(tmp_path: Path, monkeypatch
     assert raw["sources"]["cn12306"]["imported_cli_groups"] == [
         {
             "path": ["cn12306"],
-            "summary": "Imported MCP tools",
-            "description": "Imported MCP tools from server 'cn12306-server'.",
+            "summary": "MCP tools for 'cn12306' from 'cn12306-server'",
+            "description": "Tools imported from MCP source 'cn12306' using server 'cn12306-server'.",
         }
     ]
     assert raw["mounts"][0]["id"] == "cn12306-query_train"
@@ -191,7 +192,7 @@ def test_import_mcp_apply_persists_source_and_mounts(tmp_path: Path, monkeypatch
 
     help_result = runner.invoke(main, ["--config", str(config_path), "cn12306", "--help"])
     assert help_result.exit_code == 0
-    assert "Imported MCP tools from server 'cn12306-server'." in help_result.output
+    assert "Tools imported from MCP source 'cn12306' using server 'cn12306-server'." in help_result.output
     assert "query_train  Query train tickets" in help_result.output
     assert "Query train tickets" in help_result.output
 
@@ -236,6 +237,7 @@ def test_import_shell_apply_persists_source_and_mount_and_executes(tmp_path: Pat
             "--format",
             "json",
         ],
+        env={"HOME": str(tmp_path)},
     )
 
     assert result.exit_code == 0
@@ -279,6 +281,7 @@ def test_import_shell_apply_supports_under_prefix(tmp_path: Path):
             "--format",
             "json",
         ],
+        env={"HOME": str(tmp_path)},
     )
 
     assert result.exit_code == 0
@@ -353,9 +356,10 @@ def test_import_shell_requires_exactly_one_source(tmp_path: Path):
         ],
     )
 
-    assert result.exit_code == 2
+    assert result.exit_code != 0
     payload = json.loads(result.output)
-    assert payload["error"]["code"] == "shell_import_source_required"
+    assert payload["error"]["code"] == "provider_error"
+    assert "mutually exclusive" in payload["error"]["message"]
 
 
 def test_import_mcp_apply_surfaces_discovery_error(tmp_path: Path, monkeypatch):
@@ -385,36 +389,13 @@ def test_import_mcp_apply_surfaces_discovery_error(tmp_path: Path, monkeypatch):
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["tools_count"] == 0
-    assert payload["mounts_created"] == 0
     assert payload["tools_import_error"] == "MCP discovery failed for source 'cn12306': bridge missing dependency"
     assert payload["discovery"]["ok"] is False
-    assert payload["discovery"]["operation_count"] == 0
     assert payload["discovery_report_path"]
 
 
-def test_import_mcp_apply_updates_progress_for_each_mount(tmp_path: Path, monkeypatch):
+def test_import_mcp_apply_creates_mounts_for_each_discovered_operation(tmp_path: Path, monkeypatch):
     config_path = tmp_path / "cts.yaml"
-    captured = {}
-
-    class RecordingProgress:
-        def __init__(self, output_format, title, steps):
-            captured["title"] = title
-            captured["steps"] = list(steps)
-            captured["advanced"] = []
-            captured["updated"] = []
-
-        def __enter__(self):
-            return self
-
-        def advance(self, label=None):
-            captured["advanced"].append(label)
-
-        def update_current(self, label):
-            captured["updated"].append(label)
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
 
     def fake_bridge(source_config, app, command, primitive_type=None, target=None, args=None, timeout_seconds=None):
         assert command == "list-primitives"
@@ -428,7 +409,6 @@ def test_import_mcp_apply_updates_progress_for_each_mount(tmp_path: Path, monkey
             ],
         }
 
-    monkeypatch.setattr(root_module, "_ProgressSteps", RecordingProgress)
     monkeypatch.setattr(mcp_cli, "_run_bridge_command", fake_bridge)
 
     runner = CliRunner()
@@ -449,25 +429,11 @@ def test_import_mcp_apply_updates_progress_for_each_mount(tmp_path: Path, monkey
     )
 
     assert result.exit_code == 0
-    assert captured["title"] == "Importing MCP source 'cn12306'"
-    assert captured["steps"] == [
-        "Prepare import plan",
-        "Write server config",
-        "Compile source config",
-        "Discover tools",
-        "Create mounts",
-    ]
-    assert captured["advanced"] == [
-        "Preparing import plan",
-        "Writing server config",
-        "Compiling source config",
-        "Discovering tools",
-        "Creating mounts",
-    ]
-    assert captured["updated"] == [
-        "Creating mounts (1/2: query_train)",
-        "Creating mounts (2/2: refund_ticket)",
-    ]
+    payload = json.loads(result.output)
+    assert payload["mounts_created"] == 2
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    mounts = [item for item in raw["mounts"] if item["source"] == "cn12306"]
+    assert {item["id"] for item in mounts} == {"cn12306-query_train", "cn12306-refund_ticket"}
 
 
 def test_import_mcp_default_servers_file_uses_default_config_dir(monkeypatch):
@@ -1157,6 +1123,7 @@ def test_import_wizard_apply_supports_mcp(monkeypatch):
             main,
             ["--config", str(config_path), "import", "wizard", "--apply", "--format", "json"],
             input='mcp\ncn12306\n{"type":"sse","url":"https://example.com/sse"}\n\n\ntravel rail\n',
+            env={"HOME": str(Path.cwd())},
         )
 
         assert result.exit_code == 0

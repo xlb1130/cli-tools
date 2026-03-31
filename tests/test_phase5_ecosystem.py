@@ -614,7 +614,7 @@ class TestCLIDocsCommand:
             
             result = runner.invoke(
                 main,
-                ["--config", str(config_path), "docs", "generated_docs", "--format", "json"],
+                ["--config", str(config_path), "manage", "docs", "generated_docs", "--format", "json"],
             )
             
             assert result.exit_code == 0
@@ -708,7 +708,7 @@ class TestCLIServeCommands:
             with patch("cts.cli.root.default_ui_dist_dir", return_value=missing_ui_dir), patch("cts.cli.root.create_http_server") as mock_create:
                 result = runner.invoke(
                     main,
-                    ["--config", str(config_path), "ui"],
+                    ["--config", str(config_path), "manage", "ui"],
                 )
 
                 assert result.exit_code != 0

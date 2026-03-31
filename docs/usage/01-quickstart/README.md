@@ -4,6 +4,17 @@
 
 ---
 
+## 先记住导入入口
+
+```bash
+cts import <provider-type> ...
+cts import wizard
+```
+
+这一篇先从 `shell` provider 开始，因为它最容易跑通。
+
+---
+
 ## 第一步：先导入一个本地 shell 命令
 
 这是当前最快的起点，不需要你先手写配置文件。

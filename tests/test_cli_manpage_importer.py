@@ -87,6 +87,7 @@ mounts:
         [
             "--config",
             str(config_path),
+            "manage",
             "source",
             "import-manpage",
             "demo_cli",
@@ -151,6 +152,7 @@ mounts:
         [
             "--config",
             str(config_path),
+            "manage",
             "source",
             "import-manpage",
             "demo_cli",
@@ -237,6 +239,7 @@ mounts: []
         [
             "--config",
             str(config_path),
+            "manage",
             "source",
             "import-manpage",
             "demo_cli",

@@ -1,12 +1,24 @@
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from cts.config.models import SourceConfig
+from cts.imports.models import (
+    ImportArgumentDescriptor,
+    ImportDescriptor,
+    ImportFileWrite,
+    ImportPlan,
+    ImportPostAction,
+    ImportRequest,
+    ImportWizardDescriptor,
+    ImportWizardField,
+    ImportWizardStep,
+)
 from cts.models import ExecutionPlan, InvokeRequest, InvokeResult, OperationDescriptor
 from cts.providers.base import ProviderError, build_help_descriptor
 from cts.providers.cli import load_manifest, manifest_operations_from_data, operation_from_config
@@ -14,6 +26,92 @@ from cts.providers.cli import load_manifest, manifest_operations_from_data, oper
 
 class MCPCLIProvider:
     provider_type = "mcp"
+
+    def describe_import(self, app: "CTSApp") -> ImportDescriptor:
+        return ImportDescriptor(
+            provider_type=self.provider_type,
+            title="MCP Server",
+            summary="Import tools from an MCP server.",
+            arguments=[
+                ImportArgumentDescriptor(name="source_name", kind="argument", value_type="string", required=True),
+                ImportArgumentDescriptor(name="server_config", kind="option", value_type="json", flags=["--server-config", "server_config"]),
+                ImportArgumentDescriptor(name="server_name", kind="option", value_type="string"),
+                ImportArgumentDescriptor(name="config_file", kind="option", value_type="path"),
+                ImportArgumentDescriptor(name="under_values", kind="option", value_type="string_list", repeated=True, flags=["--under", "under_values"]),
+            ],
+            wizard=ImportWizardDescriptor(
+                steps=[
+                    ImportWizardStep(
+                        id="mcp",
+                        title="MCP Import",
+                        fields=[
+                            ImportWizardField(name="source_name", label="Source name", required=True),
+                            ImportWizardField(name="server_config", label="Server config JSON", value_type="json"),
+                            ImportWizardField(name="server_name", label="Existing server name"),
+                            ImportWizardField(name="config_file", label="servers.json path", value_type="path"),
+                            ImportWizardField(name="under_text", label="Mount prefix"),
+                        ],
+                    )
+                ]
+            ),
+        )
+
+    def plan_import(self, request: ImportRequest, app: "CTSApp") -> ImportPlan:
+        values = dict(request.values)
+        source_name = request.source_name or str(values.get("source_name") or "")
+        server_config = values.get("server_config")
+        server_name = values.get("server_name")
+        config_file = values.get("config_file")
+        if server_config is None and not server_name:
+            raise ProviderError("Either server_config or server_name is required")
+        if isinstance(server_config, str) and server_config.strip():
+            server_config = json.loads(server_config)
+        if config_file:
+            servers_path = Path(str(config_file))
+        else:
+            servers_path = Path(str(values.get("__target_dir__") or app.primary_config_dir)) / "servers.json"
+        actual_server_name = str(server_name or f"{source_name}-server")
+        files_to_write = []
+        if server_config is not None:
+            files_to_write.append(
+                ImportFileWrite(
+                    path=str(servers_path),
+                    format="json",
+                    content={"mcpServers": {actual_server_name: server_config}},
+                    merge_strategy="merge_json",
+                )
+            )
+        source_patch = {
+            "type": "mcp",
+            "adapter": "mcp-cli",
+            "config_file": str(servers_path),
+            "server": actual_server_name,
+            "discovery": {"mode": "live"},
+            "imported_cli_groups": [build_mcp_group_help(source_name, actual_server_name)],
+        }
+        under_values = list(values.get("under_values") or shlex.split(str(values.get("under_text") or "")))
+        preview = {
+            "ok": True,
+            "action": "import_mcp_preview",
+            "apply_action": "import_mcp_apply",
+            "source_name": source_name,
+            "server_name": actual_server_name,
+            "config_file": str(servers_path),
+            "servers_file": str(servers_path),
+            "under": under_values,
+        }
+        return ImportPlan(
+            provider_type=self.provider_type,
+            source_name=source_name,
+            summary=f"Import MCP source '{source_name}'",
+            source_patch=source_patch,
+            files_to_write=files_to_write,
+            post_compile_actions=[
+                ImportPostAction(action="sync_source", payload={"source_name": source_name}),
+                ImportPostAction(action="create_mounts_from_source_operations", payload={"source_name": source_name, "under": under_values or [source_name]}),
+            ],
+            preview=preview,
+        )
 
     def discover(self, source_name: str, source_config: SourceConfig, app: "CTSApp") -> List[OperationDescriptor]:
         operations: List[OperationDescriptor] = []
@@ -194,6 +292,70 @@ class MCPCLIProvider:
             "server": source_config.server,
             "transport_type": _resolve_transport_type(source_config, app),
         }
+
+
+def _mcp_group_summary(source_name: str, server_name: str) -> str:
+    if server_name == source_name:
+        return f"MCP tools for '{source_name}'"
+    return f"MCP tools for '{source_name}' from '{server_name}'"
+
+
+def _mcp_group_description(source_name: str, server_name: str) -> str:
+    if server_name == source_name:
+        return f"Tools imported from MCP source '{source_name}'."
+    return f"Tools imported from MCP source '{source_name}' using server '{server_name}'."
+
+
+def build_mcp_group_help(
+    source_name: str,
+    server_name: str,
+    *,
+    server_info: Optional[Dict[str, Any]] = None,
+    instructions: Optional[str] = None,
+) -> Dict[str, Any]:
+    instructions_text = str(instructions or "").strip()
+    if instructions_text:
+        return {
+            "path": [source_name],
+            "summary": _first_summary_line(instructions_text),
+            "description": instructions_text,
+        }
+
+    server_display_name = str((server_info or {}).get("name") or "").strip()
+    if server_display_name:
+        return {
+            "path": [source_name],
+            "summary": server_display_name,
+            "description": _mcp_group_description(source_name, server_display_name),
+        }
+
+    return {
+        "path": [source_name],
+        "summary": _mcp_group_summary(source_name, server_name),
+        "description": _mcp_group_description(source_name, server_name),
+    }
+
+
+def build_mcp_group_help_from_discovery(
+    source_name: str,
+    source_config: Dict[str, Any],
+    discovery: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    server_name = str(source_config.get("server") or source_name)
+    discovery_payload = discovery if isinstance(discovery, dict) else {}
+    return build_mcp_group_help(
+        source_name,
+        server_name,
+        server_info=discovery_payload.get("server_info"),
+        instructions=discovery_payload.get("instructions"),
+    )
+
+
+def _first_summary_line(text: str, limit: int = 80) -> str:
+    first_line = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    if not first_line:
+        return "MCP tools"
+    return first_line if len(first_line) <= limit else first_line[: limit - 1].rstrip() + "..."
 
 
 def _operations_from_bridge_payload(source_name: str, payload: Dict[str, Any]) -> List[OperationDescriptor]:

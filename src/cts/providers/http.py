@@ -6,6 +6,15 @@ import httpx
 
 from cts.auth import apply_auth_to_request
 from cts.config.models import SourceConfig, SourceOperationConfig
+from cts.imports.models import (
+    ImportArgumentDescriptor,
+    ImportDescriptor,
+    ImportPlan,
+    ImportRequest,
+    ImportWizardDescriptor,
+    ImportWizardField,
+    ImportWizardStep,
+)
 from cts.execution.logging import redact_value
 from cts.models import ExecutionPlan, InvokeRequest, InvokeResult, OperationDescriptor
 from cts.providers.base import ProviderError, build_help_descriptor
@@ -14,6 +23,87 @@ from cts.providers.cli import load_manifest, manifest_operations_from_data, oper
 
 class HTTPProvider:
     provider_type = "http"
+
+    def describe_import(self, app: "CTSApp") -> ImportDescriptor:
+        return ImportDescriptor(
+            provider_type=self.provider_type,
+            title="HTTP API",
+            summary="Import a hand-authored HTTP operation.",
+            arguments=[
+                ImportArgumentDescriptor(name="source_name", kind="argument", value_type="string", required=True),
+                ImportArgumentDescriptor(name="base_url", kind="option", value_type="string", required=True, flags=["--base-url", "base_url"]),
+                ImportArgumentDescriptor(name="operation_id", kind="option", value_type="string", required=True, flags=["--operation-id", "operation_id"]),
+                ImportArgumentDescriptor(name="method", kind="option", value_type="choice", default="GET", choices=["GET", "POST", "PUT", "PATCH", "DELETE"]),
+                ImportArgumentDescriptor(name="path", kind="option", value_type="string", required=True),
+                ImportArgumentDescriptor(name="title", kind="option", value_type="string"),
+                ImportArgumentDescriptor(name="description", kind="option", value_type="string"),
+                ImportArgumentDescriptor(name="risk", kind="option", value_type="choice", default="read", choices=["read", "write", "destructive"]),
+                ImportArgumentDescriptor(name="mount_under", kind="option", value_type="string", flags=["--mount-under", "mount_under"]),
+            ],
+            wizard=ImportWizardDescriptor(
+                steps=[
+                    ImportWizardStep(
+                        id="http",
+                        title="HTTP Import",
+                        fields=[
+                            ImportWizardField(name="source_name", label="Source name", required=True),
+                            ImportWizardField(name="base_url", label="Base URL", required=True),
+                            ImportWizardField(name="operation_id", label="Operation id", required=True),
+                            ImportWizardField(name="method", label="HTTP method", value_type="choice", default="GET", choices=["GET", "POST", "PUT", "PATCH", "DELETE"]),
+                            ImportWizardField(name="path", label="Path", required=True),
+                            ImportWizardField(name="title", label="Title"),
+                            ImportWizardField(name="description", label="Description"),
+                            ImportWizardField(name="risk", label="Risk level", value_type="choice", default="read", choices=["read", "write", "destructive"]),
+                            ImportWizardField(name="mount_under", label="Mount prefix"),
+                        ],
+                    )
+                ]
+            ),
+        )
+
+    def plan_import(self, request: ImportRequest, app: "CTSApp") -> ImportPlan:
+        values = dict(request.values)
+        source_name = request.source_name or str(values.get("source_name") or "")
+        operation_id = str(values.get("operation_id") or "")
+        mount_under = str(values.get("mount_under") or source_name)
+        source_patch = {
+            "type": "http",
+            "base_url": str(values.get("base_url") or ""),
+            "operations": {
+                operation_id: {
+                    "title": values.get("title") or operation_id,
+                    "description": values.get("description"),
+                    "risk": str(values.get("risk") or "read"),
+                    "input_schema": {"type": "object", "properties": {}},
+                    "provider_config": {
+                        "method": str(values.get("method") or "GET").upper(),
+                        "path": str(values.get("path") or ""),
+                    },
+                }
+            },
+        }
+        mount_patch = {
+            "id": f"{source_name}-{operation_id}".replace("_", "-"),
+            "source": source_name,
+            "operation": operation_id,
+            "command": {"path": [segment for segment in mount_under.split() if segment] + [operation_id.replace("_", "-")]},
+        }
+        return ImportPlan(
+            provider_type=self.provider_type,
+            source_name=source_name,
+            summary=f"Import HTTP operation '{source_name}.{operation_id}'",
+            source_patch=source_patch,
+            mount_patches=[mount_patch],
+            preview={
+                "ok": True,
+                "action": "import_http_preview",
+                "apply_action": "import_http_apply",
+                "source_name": source_name,
+                "operation_id": operation_id,
+                "source_config": source_patch,
+                "mount": mount_patch,
+            },
+        )
 
     def discover(self, source_name: str, source_config: SourceConfig, app: "CTSApp") -> List[OperationDescriptor]:
         operations: List[OperationDescriptor] = []

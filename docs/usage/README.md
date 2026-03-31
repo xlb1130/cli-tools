@@ -2,6 +2,16 @@
 
 这组文档按“由简到难”的顺序组织，建议不要从 provider 细节开始硬读，而是先跑通，再扩展。
 
+先记住一个总入口：
+
+```bash
+cts import <provider-type> ...
+cts import wizard
+cts import wizard <provider-type>
+```
+
+`import` 现在由 provider 自己定义参数和 wizard，内置 provider 与 plugin provider 走同一条导入链路。
+
 ## 推荐阅读顺序
 
 ### 第 1 步：先跑通一个最小例子

@@ -5,9 +5,7 @@ import fnmatch
 import re
 import shlex
 import sys
-import threading
 import time
-from contextlib import contextmanager
 from functools import update_wrapper
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -15,27 +13,26 @@ from typing import Any, Callable, Dict, List, Optional
 import click
 
 from cts import __version__
-from cts.cli.builtins.alias import register_alias_commands
-from cts.cli.builtins.catalog_workflow import register_catalog_workflow_commands
-from cts.cli.builtins.completion import register_completion_commands
-from cts.cli.builtins.config import register_config_group
-from cts.cli.builtins.execution_ops import register_execution_ops_commands
-from cts.cli.builtins.imports import register_import_commands
-from cts.cli.builtins.inspect import register_inspect_commands
-from cts.cli.builtins.mount import register_mount_commands
-from cts.cli.builtins.runtime_admin import register_runtime_admin_commands
-from cts.cli.builtins.source import register_source_commands
-from cts.cli.builtins.surfaces import register_surface_commands
 from cts.cli.dynamic import DirectPathGroup, GroupedOptionCommand, build_dynamic_command, build_static_help_command
 from cts.cli.execution_runtime import build_dynamic_callback, run_mount_command
-from cts.cli.import_planning import (
-    apply_cli_import_plan as imported_apply_cli_import_plan,
-    apply_cli_import_tree_plan as imported_apply_cli_import_tree_plan,
-    derive_operation_id_from_command as imported_derive_operation_id_from_command,
-    prepare_cli_import_plan as imported_prepare_cli_import_plan,
-    prepare_cli_import_tree_plan as imported_prepare_cli_import_tree_plan,
+from cts.cli.registration import register_builtin_commands
+from cts.cli.support import (
+    ProgressSteps as _ProgressSteps,
+    build_error_command as _support_build_error_command,
+    build_param_payload as _support_build_param_payload,
+    elapsed_status as _elapsed_status,
+    error_output_format,
+    fail as _fail,
+    find_alias_payload as _support_find_alias_payload,
+    find_mount_payload as _support_find_mount_payload,
+    maybe_confirm as _maybe_confirm,
+    parse_param_spec as _support_parse_param_spec,
+    path_to_str as _support_path_to_str,
+    serialize_error as _support_serialize_error,
+    split_command_segments as _support_split_command_segments,
+    status as _status,
+    strip_internal_metadata as _strip_internal_metadata,
 )
-from cts.cli.import_runtime import execute_import_mcp, execute_import_shell
 from cts.cli.lazy import (
     CTSApp,
     _config_edit_error,
@@ -64,10 +61,12 @@ from cts.cli.lazy import (
     summarize_help_text,
     synthesize_operation,
     write_manifest_operations,
+    create_http_server,
+    default_ui_dist_dir,
 )
-from cts.cli.state import CLIState, get_app as _cli_get_app, get_state as _cli_get_state, parse_root_argv
+from cts.cli.state import CLIState, get_app as _cli_get_app, get_state as _cli_get_state, parse_root_argv as _parse_root_argv
 from cts.cli.static_catalog import StaticHelpCatalog, build_static_help_catalog
-from cts.execution.errors import RegistryError, exit_code_for_exception
+from cts.execution.errors import RegistryError
 from cts.execution.logging import (
     emit_app_event,
 )
@@ -164,7 +163,7 @@ class CatalogBackedGroup(click.Group):
         try:
             app = _get_app(ctx)
         except Exception as exc:
-            return _build_error_command(cmd_name, exc)
+            return _support_build_error_command(cmd_name, exc, fail=lambda inner_ctx, inner_exc, stage, output_format: _fail(inner_ctx, inner_exc, stage, output_format))
 
         next_prefix = self.path_prefix + (cmd_name,)
         mount = app.catalog.find_by_path(next_prefix)
@@ -191,6 +190,7 @@ class CatalogBackedGroup(click.Group):
 @click.option("--config", "config_path", type=click.Path(path_type=Path, dir_okay=False))
 @click.option("--profile", default=None, help="Active profile override.")
 @click.option(
+    "--format",
     "--output",
     "global_output",
     type=click.Choice(["text", "json"]),
@@ -201,7 +201,7 @@ class CatalogBackedGroup(click.Group):
 @click.version_option(__version__, prog_name="cts")
 @click.pass_context
 def main(ctx: click.Context, config_path: Optional[Path], profile: Optional[str], global_output: str) -> None:
-    raw = parse_root_argv(sys.argv[1:])
+    raw = _parse_root_argv(sys.argv[1:])
     ctx.obj = CLIState(
         config_path=config_path or raw.get("config_path"),
         profile=profile or raw.get("profile"),
@@ -217,106 +217,14 @@ def manage() -> None:
     """CTS administration and maintenance commands."""
 
 
-register_config_group(
-    manage,
-    pass_app=pass_app,
-    get_state=lambda ctx: _get_state(ctx),
-    fail=lambda ctx, exc, stage, output_format: _fail(ctx, exc, stage, output_format),
-    serialize_error=lambda exc, stage: _serialize_error(exc, stage),
-    strip_internal_metadata=lambda value: _strip_internal_metadata(value),
-)
-
-
 @manage.group()
 def source() -> None:
     """Source registry operations."""
 
 
-register_source_commands(
-    source,
-    pass_app=pass_app,
-    get_state=lambda ctx: _get_state(ctx),
-    fail=lambda ctx, exc, stage, output_format: _fail(ctx, exc, stage, output_format),
-    maybe_confirm=lambda message, assume_yes, output_format: _maybe_confirm(message, assume_yes=assume_yes, output_format=output_format),
-    progress_steps=lambda *args, **kwargs: _ProgressSteps(*args, **kwargs),
-    status=lambda output_format, message: _status(output_format, message),
-    strip_internal_metadata=lambda value: _strip_internal_metadata(value),
-    parse_assignment_value=lambda raw: _parse_assignment(raw),
-    parse_string_pair=lambda raw, field_name: _parse_string_pair(raw, field_name=field_name),
-    emit_app_event=lambda *args, **kwargs: emit_app_event(*args, **kwargs),
-)
-
-
 @main.group("import")
 def import_group() -> None:
-    """Simplified import flows for common onboarding tasks."""
-
-register_import_commands(
-    import_group,
-    get_state=lambda ctx: _get_state(ctx),
-    progress_steps=lambda *args, **kwargs: _ProgressSteps(*args, **kwargs),
-    fail=lambda ctx, exc, stage, output_format: _fail(ctx, exc, stage, output_format),
-    prepare_edit_session=lambda config_path, target_file=None: prepare_edit_session(config_path, target_file=target_file),
-    app_factory=lambda loaded, profile, config_path: CTSApp(
-        loaded,
-        active_profile=profile,
-        explicit_config_path=str(config_path) if config_path else None,
-        requested_profile=profile,
-    ),
-    prepare_cli_import_plan=lambda app, **kwargs: imported_prepare_cli_import_plan(app, **kwargs),
-    prepare_cli_import_tree_plan=lambda app, **kwargs: imported_prepare_cli_import_tree_plan(app, **kwargs),
-    apply_cli_import_plan=lambda payload, plan: imported_apply_cli_import_plan(
-        payload,
-        plan,
-        ensure_mapping=lambda value, key: ensure_mapping(value, key),
-        ensure_list=lambda value, key: ensure_list(value, key),
-        config_edit_error=lambda message: _config_edit_error(message),
-    ),
-    apply_cli_import_tree_plan=lambda payload, plan: imported_apply_cli_import_tree_plan(
-        payload,
-        plan,
-        ensure_mapping=lambda value, key: ensure_mapping(value, key),
-        ensure_list=lambda value, key: ensure_list(value, key),
-        config_edit_error=lambda message: _config_edit_error(message),
-    ),
-    execute_import_shell=lambda ctx, **kwargs: execute_import_shell(
-        ctx,
-        get_state=lambda inner_ctx: _get_state(inner_ctx),
-        prepare_edit_session=lambda config_path, target_file=None: prepare_edit_session(config_path, target_file=target_file),
-        app_factory=lambda loaded, profile, config_path: CTSApp(
-            loaded,
-            active_profile=profile,
-            explicit_config_path=str(config_path) if config_path else None,
-            requested_profile=profile,
-        ),
-        conflict_signatures=lambda conflicts: conflict_signatures(conflicts),
-        ensure_mapping=lambda payload, key: ensure_mapping(payload, key),
-        ensure_list=lambda payload, key: ensure_list(payload, key),
-        apply_update=lambda *args, **kw: apply_update(*args, **kw),
-        strip_internal_metadata=lambda value: _strip_internal_metadata(value),
-        find_mount_payload=lambda items, mount_id: _find_mount_payload(items, mount_id),
-        build_mount_details=lambda app, mount: build_mount_details(app, mount),
-        registry_error=lambda message, **extra: RegistryError(message, **extra),
-        split_command_segments=lambda values: _split_command_segments(values),
-        **kwargs,
-    ),
-    execute_import_mcp=lambda ctx, **kwargs: execute_import_mcp(
-        ctx,
-        get_state=lambda inner_ctx: _get_state(inner_ctx),
-        prepare_edit_session=lambda config_path, target_file=None: prepare_edit_session(config_path, target_file=target_file),
-        apply_update=lambda *args, **kw: apply_update(*args, **kw),
-        **kwargs,
-    ),
-    render_payload=lambda payload, output_format: render_payload(payload, output_format),
-    write_manifest_operations=lambda path, operations, executable=None: write_manifest_operations(path, operations, executable=executable),
-    merge_operation_into_manifest=lambda path, operation, executable=None: merge_operation_into_manifest(path, operation, executable=executable),
-    apply_update=lambda *args, **kwargs: apply_update(*args, **kwargs),
-    conflict_signatures=lambda conflicts: conflict_signatures(conflicts),
-    strip_internal_metadata=lambda value: _strip_internal_metadata(value),
-    find_mount_payload=lambda items, mount_id: _find_mount_payload(items, mount_id),
-    build_mount_details=lambda app, mount: build_mount_details(app, mount),
-    derive_operation_id_from_command=lambda command_argv: imported_derive_operation_id_from_command(command_argv),
-)
+    """Provider-driven import entrypoint for sources, mounts, and wizard flows."""
 
 
 @manage.group()
@@ -324,46 +232,9 @@ def mount() -> None:
     """Mount registry operations."""
 
 
-register_mount_commands(
-    mount,
-    pass_app=pass_app,
-    get_state=lambda ctx: _get_state(ctx),
-    fail=lambda ctx, exc, stage, output_format: _fail(ctx, exc, stage, output_format),
-    maybe_confirm=lambda message, assume_yes, output_format: _maybe_confirm(message, assume_yes=assume_yes, output_format=output_format),
-    progress_steps=lambda *args, **kwargs: _ProgressSteps(*args, **kwargs),
-    status=lambda output_format, message: _status(output_format, message),
-    conflict_signatures=lambda conflicts: conflict_signatures(conflicts),
-    split_command_segments=lambda values: _split_command_segments(values),
-    build_param_payload=lambda **kwargs: _build_param_payload(**kwargs),
-    parse_assignment_value=lambda raw: _parse_assignment(raw),
-    find_mount_payload=lambda items, mount_id: _find_mount_payload(items, mount_id),
-)
-
-
 @manage.group("alias")
 def alias_group() -> None:
     """Top-level alias operations."""
-
-
-register_alias_commands(
-    alias_group,
-    pass_app=pass_app,
-    get_state=lambda ctx: _get_state(ctx),
-    fail=lambda ctx, exc, stage, output_format: _fail(ctx, exc, stage, output_format),
-    maybe_confirm=lambda message, assume_yes, output_format: _maybe_confirm(message, assume_yes=assume_yes, output_format=output_format),
-    progress_steps=lambda *args, **kwargs: _ProgressSteps(*args, **kwargs),
-    conflict_signatures=lambda conflicts: conflict_signatures(conflicts),
-    split_command_segments=lambda values: _split_command_segments(values),
-    find_alias_payload=lambda items, from_tokens: _find_alias_payload(items, from_tokens),
-)
-
-
-register_catalog_workflow_commands(
-    manage,
-    pass_app=pass_app,
-    get_state=lambda ctx: _get_state(ctx),
-    fail=lambda ctx, exc, stage, output_format: _fail(ctx, exc, stage, output_format),
-)
 
 
 @manage.group()
@@ -371,50 +242,46 @@ def inspect() -> None:
     """Inspect compiled sources, mounts, and operations."""
 
 
-register_inspect_commands(
-    inspect,
-    pass_app=pass_app,
-    fail=lambda ctx, exc, stage, output_format: _fail(ctx, exc, stage, output_format),
-    path_to_str=lambda path: _path_to_str(path),
-)
-
-register_runtime_admin_commands(
-    manage,
-    pass_app=pass_app,
-    fail=lambda ctx, exc, stage, output_format: _fail(ctx, exc, stage, output_format),
-    maybe_confirm=lambda message, assume_yes, output_format: _maybe_confirm(
-        message,
-        assume_yes=assume_yes,
-        output_format=output_format,
-    ),
-)
-
-register_execution_ops_commands(
-    manage,
-    pass_app=pass_app,
-    pass_invoke_app=pass_invoke_app,
-    fail=lambda ctx, exc, stage, output_format: _fail(ctx, exc, stage, output_format),
-    maybe_confirm=lambda message, assume_yes, output_format: _maybe_confirm(
-        message,
-        assume_yes=assume_yes,
-        output_format=output_format,
-    ),
-    progress_steps=lambda *args, **kwargs: _ProgressSteps(*args, **kwargs),
-    status=lambda output_format, message: _status(output_format, message),
-    emit_app_event=lambda *args, **kwargs: emit_app_event(*args, **kwargs),
-    run_mount_command=lambda app, mount, kwargs, mode: _run_mount_command(app, mount, kwargs, mode),
-)
-
-register_completion_commands(
-    manage,
-    main_group=main,
-)
-
-register_surface_commands(
-    manage,
-    pass_app=pass_app,
-    fail=lambda ctx, exc, stage, output_format: _fail(ctx, exc, stage, output_format),
-    progress_steps=lambda *args, **kwargs: _ProgressSteps(*args, **kwargs),
+register_builtin_commands(
+    main=main,
+    manage=manage,
+    source=source,
+    import_group=import_group,
+    mount=mount,
+    alias_group=alias_group,
+    inspect=inspect,
+    deps={
+        "pass_app": pass_app,
+        "pass_invoke_app": pass_invoke_app,
+        "get_state": lambda ctx: _get_state(ctx),
+        "fail": lambda ctx, exc, stage, output_format: _fail(ctx, exc, stage, output_format),
+        "serialize_error": lambda exc, stage: _serialize_error(exc, stage),
+        "strip_internal_metadata": lambda value: _strip_internal_metadata(value),
+        "maybe_confirm": lambda message, assume_yes, output_format: _maybe_confirm(message, assume_yes=assume_yes, output_format=output_format),
+        "progress_steps": lambda *args, **kwargs: _ProgressSteps(*args, **kwargs),
+        "status": lambda output_format, message: _status(output_format, message),
+        "parse_assignment_value": lambda raw: _parse_assignment(raw),
+        "parse_string_pair": lambda raw, field_name: _parse_string_pair(raw, field_name=field_name),
+        "emit_app_event": lambda *args, **kwargs: emit_app_event(*args, **kwargs),
+        "prepare_edit_session": lambda config_path, target_file=None: prepare_edit_session(config_path, target_file=target_file),
+        "app_factory": lambda loaded, profile, config_path: CTSApp(
+            loaded,
+            active_profile=profile,
+            explicit_config_path=str(config_path) if config_path else None,
+            requested_profile=profile,
+        ),
+        "render_payload": lambda payload, output_format: render_payload(payload, output_format),
+        "apply_update": lambda *args, **kwargs: apply_update(*args, **kwargs),
+        "conflict_signatures": lambda conflicts: conflict_signatures(conflicts),
+        "find_mount_payload": lambda items, mount_id: _find_mount_payload(items, mount_id),
+        "split_command_segments": lambda values: _split_command_segments(values),
+        "build_param_payload": lambda **kwargs: _build_param_payload(**kwargs),
+        "find_alias_payload": lambda items, from_tokens: _find_alias_payload(items, from_tokens),
+        "path_to_str": lambda path: _path_to_str(path),
+        "run_mount_command": lambda app, mount, kwargs, mode: _run_mount_command(app, mount, kwargs, mode),
+        "create_http_server": lambda *args, **kwargs: create_http_server(*args, **kwargs),
+        "default_ui_dist_dir": lambda: default_ui_dist_dir(),
+    },
 )
 
 
@@ -461,10 +328,7 @@ def _parse_string_pair(raw: str, *, field_name: str) -> tuple[str, str]:
 
 
 def _split_command_segments(values: tuple[str, ...] | list[str]) -> List[str]:
-    tokens: List[str] = []
-    for value in values:
-        tokens.extend(shlex.split(value))
-    return tokens
+    return _support_split_command_segments(values)
 
 
 def _build_param_payload(
@@ -475,311 +339,37 @@ def _build_param_payload(
     param_default_items: tuple[str, ...],
     param_flag_items: tuple[str, ...],
 ) -> Dict[str, Any]:
-    params: Dict[str, Any] = {}
-    for spec in param_specs:
-        name, param_type = _parse_param_spec(spec)
-        params[name] = {"type": param_type}
-
-    for name in required_params:
-        params.setdefault(name, {"type": "string"})
-        params[name]["required"] = True
-
-    for item in param_help_items:
-        name, text = _parse_string_pair(item, field_name="param-help")
-        params.setdefault(name, {"type": "string"})
-        params[name]["help"] = text
-
-    for item in param_default_items:
-        name, raw_value = _parse_assignment(item)
-        params.setdefault(name, {"type": "string"})
-        params[name]["default"] = raw_value
-
-    for item in param_flag_items:
-        name, flag = _parse_string_pair(item, field_name="param-flag")
-        params.setdefault(name, {"type": "string"})
-        params[name]["flag"] = flag
-
-    return params
+    return _support_build_param_payload(
+        parse_assignment=_parse_assignment,
+        parse_string_pair=_parse_string_pair,
+        param_specs=param_specs,
+        required_params=required_params,
+        param_help_items=param_help_items,
+        param_default_items=param_default_items,
+        param_flag_items=param_flag_items,
+    )
+    
 
 
 def _parse_param_spec(spec: str) -> tuple[str, str]:
-    if ":" in spec:
-        name, param_type = spec.split(":", 1)
-    else:
-        name, param_type = spec, "string"
-    name = name.strip()
-    param_type = param_type.strip() or "string"
-    if not name:
-        raise _config_edit_error(f"param 不能为空: {spec}")
-    return name, param_type
+    return _support_parse_param_spec(spec)
 
 
 def _find_mount_payload(items: List[Dict[str, Any]], mount_id: str) -> Optional[Dict[str, Any]]:
-    for item in items:
-        if isinstance(item, dict) and item.get("id") == mount_id:
-            return _strip_internal_metadata(item)
-    return None
+    return _support_find_mount_payload(items, mount_id)
 
 
 def _find_alias_payload(items: List[Dict[str, Any]], from_tokens: List[str]) -> Optional[Dict[str, Any]]:
-    for item in items:
-        if isinstance(item, dict) and item.get("from") == from_tokens:
-            return _strip_internal_metadata(item)
-    return None
+    return _support_find_alias_payload(items, from_tokens)
 
 
 def _path_to_str(path: Optional[Path]) -> Optional[str]:
-    return str(path) if path else None
+    return _support_path_to_str(path)
 
 
 def _serialize_error(exc: Exception, stage: str) -> Dict[str, Any]:
-    return build_error_envelope(exc, stage)["error"]
+    return _support_serialize_error(exc, stage)
 
 
 def _error_output_format(ctx: click.Context, requested_output: Optional[str]) -> str:
-    if requested_output == "json":
-        return "json"
-    return _get_state(ctx).global_output
-
-
-class _ProgressSteps:
-    def __init__(self, output_format: str, title: str, steps: List[str]) -> None:
-        self.output_format = output_format
-        self.title = title
-        self.steps = steps
-        self.index = 0
-        self.enabled = output_format != "json" and bool(getattr(sys.stderr, "isatty", lambda: False)())
-        self.started_at = time.perf_counter()
-        self.current_step: Optional[str] = None
-        self.current_step_started_at: Optional[float] = None
-        self.failed_step: Optional[str] = None
-        self.failed_step_duration: Optional[float] = None
-        self.step_durations: List[tuple[str, float]] = []
-        self._console = None
-        self._progress = None
-        self._task_id = None
-        self._ticker_stop = threading.Event()
-        self._ticker_thread: Optional[threading.Thread] = None
-        self._status_interval = 0.1
-
-    def __enter__(self):
-        if not self.enabled:
-            return self
-        try:
-            from rich.console import Console
-            from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
-        except ModuleNotFoundError:
-            click.echo(f"{self.title}", err=True)
-            return self
-        self._console = Console(stderr=True)
-        self._progress = Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TextColumn("{task.completed}/{task.total}"),
-            console=self._console,
-            transient=True,
-        )
-        self._progress.__enter__()
-        self._task_id = self._progress.add_task(self.title, total=max(len(self.steps), 1), completed=0)
-        self._start_live_updates()
-        return self
-
-    def _elapsed_total(self) -> float:
-        return max(time.perf_counter() - self.started_at, 0.0)
-
-    def _close_current_step(self, *, duration_override: Optional[float] = None) -> None:
-        if self.current_step is None or self.current_step_started_at is None:
-            return
-        duration = duration_override
-        if duration is None:
-            duration = max(time.perf_counter() - self.current_step_started_at, 0.0)
-        self.step_durations.append((self.current_step, duration))
-        self.current_step = None
-        self.current_step_started_at = None
-
-    def _emit_status_line(self, message: str) -> None:
-        if self._console is not None:
-            self._console.print(message)
-            return
-        click.echo(message, err=True)
-
-    def _current_step_elapsed(self) -> float:
-        if self.current_step_started_at is None:
-            return 0.0
-        return max(time.perf_counter() - self.current_step_started_at, 0.0)
-
-    def _format_current_description(self) -> str:
-        label = self.current_step or self.title
-        if not self.current_step:
-            return label
-        return f"[{self.index}/{len(self.steps)}] {label}  elapsed {self._current_step_elapsed():.1f}s"
-
-    def _refresh_live_description(self) -> None:
-        if self._progress is None or self._task_id is None or self.current_step is None:
-            return
-        self._progress.update(self._task_id, description=self._format_current_description())
-
-    def _start_live_updates(self) -> None:
-        if self._progress is None or self._task_id is None:
-            return
-        self._ticker_stop.clear()
-
-        def _ticker() -> None:
-            while not self._ticker_stop.wait(self._status_interval):
-                self._refresh_live_description()
-
-        self._ticker_thread = threading.Thread(target=_ticker, name="cts-progress-steps", daemon=True)
-        self._ticker_thread.start()
-
-    def _emit_failure(self) -> None:
-        step_label = self.failed_step or self.current_step or (self.steps[self.index] if self.index < len(self.steps) else self.title)
-        current_step_elapsed = self.failed_step_duration or 0.0
-        if current_step_elapsed <= 0.0 and self.current_step_started_at is not None:
-            current_step_elapsed = max(time.perf_counter() - self.current_step_started_at, 0.0)
-        self._emit_status_line(
-            f"Failed at step {min(self.index + (1 if self.current_step else 0), len(self.steps))}/{len(self.steps)}: "
-            f"{step_label} (step {current_step_elapsed:.2f}s, total {self._elapsed_total():.2f}s)"
-        )
-
-    def _emit_summary(self, *, failed: bool) -> None:
-        status = "Failed" if failed else "Completed"
-        self._emit_status_line(f"{status} {self.title} in {self._elapsed_total():.2f}s")
-        for idx, (label, duration) in enumerate(self.step_durations, start=1):
-            self._emit_status_line(f"  {idx}. {label}: {duration:.2f}s")
-
-    def advance(self, label: Optional[str] = None) -> None:
-        if not self.enabled:
-            return
-        self._close_current_step()
-        self.index += 1
-        description = label or (self.steps[self.index - 1] if self.index - 1 < len(self.steps) else self.title)
-        self.current_step = description
-        self.current_step_started_at = time.perf_counter()
-        if self._progress is not None and self._task_id is not None:
-            self._progress.update(
-                self._task_id,
-                completed=min(self.index, len(self.steps)),
-                description=self._format_current_description(),
-            )
-        else:
-            click.echo(f"[{self.index}/{len(self.steps)}] {description}", err=True)
-
-    def update_current(self, label: str) -> None:
-        if not self.enabled or self.current_step is None:
-            return
-        self.current_step = label
-        if self._progress is not None and self._task_id is not None:
-            self._progress.update(self._task_id, description=self._format_current_description())
-        else:
-            click.echo(f"[{self.index}/{len(self.steps)}] {label}", err=True)
-
-    def __exit__(self, exc_type, exc, tb):
-        failed_duration = None
-        if exc_type is not None:
-            self.failed_step = self.current_step or self.failed_step
-            if self.current_step_started_at is not None:
-                failed_duration = max(time.perf_counter() - self.current_step_started_at, 0.0)
-                self.failed_step_duration = failed_duration
-        self._close_current_step(duration_override=failed_duration)
-        self._ticker_stop.set()
-        if self._ticker_thread is not None:
-            self._ticker_thread.join(timeout=max(self._status_interval * 2, 0.2))
-        if self._progress is not None:
-            self._progress.__exit__(exc_type, exc, tb)
-        if exc_type is not None and self.enabled:
-            self._emit_failure()
-            self._emit_summary(failed=True)
-        elif self.enabled and self.step_durations:
-            self._emit_summary(failed=False)
-        return False
-
-
-@contextmanager
-def _status(output_format: str, message: str):
-    if output_format == "json" or not bool(getattr(sys.stderr, "isatty", lambda: False)()):
-        yield
-        return
-    try:
-        from rich.console import Console
-    except ModuleNotFoundError:
-        click.echo(message, err=True)
-        yield
-        return
-    console = Console(stderr=True)
-    with console.status(message):
-        yield
-
-
-@contextmanager
-def _elapsed_status(output_format: str, message: str, *, interval: float = 0.1):
-    if output_format == "json" or not bool(getattr(sys.stderr, "isatty", lambda: False)()):
-        yield
-        return
-    try:
-        from rich.console import Console
-    except ModuleNotFoundError:
-        click.echo(message, err=True)
-        yield
-        return
-
-    console = Console(stderr=True)
-    stop_event = threading.Event()
-    start_time = time.perf_counter()
-
-    def _format_message() -> str:
-        elapsed = time.perf_counter() - start_time
-        return f"{message}  elapsed {elapsed:.1f}s"
-
-    with console.status(_format_message()) as status:
-        def _ticker() -> None:
-            while not stop_event.wait(interval):
-                status.update(_format_message())
-
-        worker = threading.Thread(target=_ticker, name="cts-elapsed-status", daemon=True)
-        worker.start()
-        try:
-            yield
-        finally:
-            stop_event.set()
-            worker.join(timeout=max(interval * 2, 0.2))
-
-
-def _maybe_confirm(message: str, *, assume_yes: bool, output_format: str) -> None:
-    if assume_yes or output_format == "json":
-        return
-    if not bool(getattr(sys.stdin, "isatty", lambda: False)()):
-        return
-    if not click.confirm(message, default=False):
-        raise click.Abort()
-
-
-def _build_error_command(name: str, exc: Exception) -> click.Command:
-    @click.pass_context
-    def callback(ctx: click.Context) -> None:
-        _fail(ctx, exc, "config_load", _error_output_format(ctx, None))
-
-    return click.Command(name=name, callback=callback, help="Configuration failed to load.")
-
-
-def _strip_internal_metadata(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {key: _strip_internal_metadata(item) for key, item in value.items() if not key.startswith("__")}
-    if isinstance(value, list):
-        return [_strip_internal_metadata(item) for item in value]
-    return value
-
-
-def _fail(
-    ctx: click.Context,
-    exc: Exception,
-    stage: str,
-    output_format: str,
-    mount=None,
-    run_id: Optional[str] = None,
-    trace_id: Optional[str] = None,
-) -> None:
-    payload = build_error_envelope(exc, stage, mount=mount, run_id=run_id, trace_id=trace_id)
-    click.echo(render_payload(payload, output_format))
-    ctx.exit(exit_code_for_exception(exc, stage))
-
+    return error_output_format(_get_state(ctx).global_output, requested_output)

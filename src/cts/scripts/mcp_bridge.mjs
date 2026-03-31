@@ -40,6 +40,8 @@ async function main() {
       const payload = await listPrimitives(client)
       ok({
         server: context.serverName,
+        server_info: client.getServerVersion(),
+        instructions: client.getInstructions() || null,
         transport_type: context.transportType,
         capabilities: client.getServerCapabilities(),
         primitives: payload,

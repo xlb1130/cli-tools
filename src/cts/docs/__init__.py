@@ -305,8 +305,9 @@ class DocsGenerator:
             f"- **Provider**: `{mount.provider_type}`",
         ]
         
-        if mount.operation.summary:
-            lines.append(f"- **Summary**: {mount.operation.summary}")
+        summary = mount.summary or mount.operation.title
+        if summary:
+            lines.append(f"- **Summary**: {summary}")
         
         lines.append("")
         

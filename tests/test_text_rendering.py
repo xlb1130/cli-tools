@@ -389,3 +389,24 @@ def test_render_payload_formats_execution_result_with_duration_and_output():
     assert '"text": "hello"' in output
     assert "Reliability" in output
     assert "Metadata" in output
+
+
+def test_render_payload_wraps_long_output_text_without_truncating():
+    long_text = "prefix-" + ("x" * 180) + "-suffix"
+    payload = {
+        "ok": True,
+        "mount_id": "demo-echo",
+        "mode": "invoke",
+        "provider_type": "cli",
+        "source": "demo_cli",
+        "operation_id": "echo_text",
+        "text": long_text,
+    }
+
+    output = render_payload(payload, "text")
+    normalized = output
+    for marker in (" ", "\n", "│", "╭", "╮", "╰", "╯", "─"):
+        normalized = normalized.replace(marker, "")
+
+    assert "Output" in output
+    assert long_text in normalized
