@@ -45,7 +45,7 @@ cts import cli git-status git status --apply
 
 ```bash
 cts git-status --help
-cts explain git-status-status
+cts manage explain git-status-status
 cts manage source show git-status --format json
 ```
 
@@ -158,7 +158,7 @@ cts manage source show <source> --format json
 cts manage mount list --format json
 
 # 看执行计划
-cts explain <mount-id>
+cts manage explain <mount-id>
 
 # 通过稳定 id 调用
 cts manage invoke <mount-id> --input-json '{"key":"value"}' --format json

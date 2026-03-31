@@ -143,7 +143,7 @@ mounts:
 
     inspect_result = runner.invoke(
         main,
-        ["--config", str(config_path), "inspect", "operation", "petstore", "get_pet", "--format", "json"],
+        ["--config", str(config_path), "manage", "inspect", "operation", "petstore", "get_pet", "--format", "json"],
     )
     assert inspect_result.exit_code == 0
     inspect_payload = json.loads(inspect_result.output)
@@ -252,7 +252,7 @@ def test_source_add_openapi_supports_spec_file(tmp_path: Path):
         [
             "--config",
             str(config_path),
-            "source",
+            "manage", "source",
             "add",
             "openapi",
             "petstore",

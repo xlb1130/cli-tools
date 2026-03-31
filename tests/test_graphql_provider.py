@@ -161,7 +161,7 @@ mounts:
 
     inspect_result = runner.invoke(
         main,
-        ["--config", str(config_path), "inspect", "operation", "github_graphql", "viewer", "--format", "json"],
+        ["--config", str(config_path), "manage", "inspect", "operation", "github_graphql", "viewer", "--format", "json"],
     )
     assert inspect_result.exit_code == 0
     inspect_payload = json.loads(inspect_result.output)
@@ -311,7 +311,7 @@ def test_source_add_graphql_supports_schema_file(tmp_path: Path):
         [
             "--config",
             str(config_path),
-            "source",
+            "manage", "source",
             "add",
             "graphql",
             "github_graphql",

@@ -275,7 +275,7 @@ mounts:
     )
 
     runner = CliRunner()
-    first_sync = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    first_sync = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert first_sync.exit_code == 0
 
     manifest_path.write_text(
@@ -311,7 +311,7 @@ mounts:
         ),
         encoding="utf-8",
     )
-    second_sync = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    second_sync = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert second_sync.exit_code == 0
 
     app = build_app(str(config_path))
@@ -495,7 +495,7 @@ mounts:
     runner = CliRunner()
     invoke_result = runner.invoke(
         main,
-        ["--config", str(config_path), "invoke", "demo-echo", "--input-json", '{"text":"hello"}', "--format", "json"],
+        ["--config", str(config_path), "manage", "invoke", "demo-echo", "--input-json", '{"text":"hello"}', "--format", "json"],
     )
     assert invoke_result.exit_code == 0
     run_id = json.loads(invoke_result.output)["run_id"]
@@ -712,7 +712,7 @@ def test_http_surface_can_serve_static_ui(tmp_path: Path):
 
         index_response = httpx.get(f"{base_url}/", timeout=5.0)
         assert index_response.status_code == 200
-        assert "cts ui" in index_response.text
+        assert "cts manage ui" in index_response.text
 
         asset_response = httpx.get(f"{base_url}/assets/app.js", timeout=5.0)
         assert asset_response.status_code == 200
@@ -720,7 +720,7 @@ def test_http_surface_can_serve_static_ui(tmp_path: Path):
 
         spa_route_response = httpx.get(f"{base_url}/mounts/demo-echo", timeout=5.0)
         assert spa_route_response.status_code == 200
-        assert "cts ui" in spa_route_response.text
+        assert "cts manage ui" in spa_route_response.text
     finally:
         server.shutdown()
         server.server_close()
@@ -902,7 +902,7 @@ mounts:
     )
 
     runner = CliRunner()
-    first_sync = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    first_sync = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert first_sync.exit_code == 0
 
     manifest_path.write_text(
@@ -935,7 +935,7 @@ mounts:
         ),
         encoding="utf-8",
     )
-    second_sync = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    second_sync = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert second_sync.exit_code == 0
 
     app = build_app(str(config_path))

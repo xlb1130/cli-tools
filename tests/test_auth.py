@@ -49,7 +49,7 @@ mounts:
 
     runner = CliRunner()
 
-    status_before = runner.invoke(main, ["--config", str(config_path), "auth", "status", "demo", "--format", "json"])
+    status_before = runner.invoke(main, ["--config", str(config_path), "manage", "auth", "status", "demo", "--format", "json"])
     assert status_before.exit_code == 0
     assert json.loads(status_before.output)["state"] == "configured"
 
@@ -58,7 +58,7 @@ mounts:
         [
             "--config",
             str(config_path),
-            "auth",
+            "manage", "auth",
             "login",
             "demo",
             "--token",
@@ -207,7 +207,7 @@ auth_profiles:
     monkeypatch.setenv("DEMO_BEARER_TOKEN", "env-secret-token")
 
     runner = CliRunner()
-    result = runner.invoke(main, ["--config", str(config_path), "auth", "status", "env_demo", "--format", "json"])
+    result = runner.invoke(main, ["--config", str(config_path), "manage", "auth", "status", "env_demo", "--format", "json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["state"] == "active"
@@ -260,7 +260,7 @@ mounts:
 
     runner = CliRunner()
 
-    secret_list = runner.invoke(main, ["--config", str(config_path), "secret", "list", "--format", "json"])
+    secret_list = runner.invoke(main, ["--config", str(config_path), "manage", "secret", "list", "--format", "json"])
     assert secret_list.exit_code == 0
     secret_list_payload = json.loads(secret_list.output)
     assert secret_list_payload["summary"]["secret_count"] == 1
@@ -268,13 +268,13 @@ mounts:
     assert secret_list_payload["items"][0]["config"]["value"] == "***"
     assert "gh-secret-token" not in secret_list.output
 
-    secret_show = runner.invoke(main, ["--config", str(config_path), "secret", "show", "github_token", "--format", "json"])
+    secret_show = runner.invoke(main, ["--config", str(config_path), "manage", "secret", "show", "github_token", "--format", "json"])
     assert secret_show.exit_code == 0
     secret_show_payload = json.loads(secret_show.output)
     assert secret_show_payload["value_present"] is True
     assert secret_show_payload["config"]["value"] == "***"
 
-    auth_status = runner.invoke(main, ["--config", str(config_path), "auth", "status", "github", "--format", "json"])
+    auth_status = runner.invoke(main, ["--config", str(config_path), "manage", "auth", "status", "github", "--format", "json"])
     assert auth_status.exit_code == 0
     auth_payload = json.loads(auth_status.output)
     assert auth_payload["state"] == "active"
@@ -403,7 +403,7 @@ mounts:
         [
             "--config",
             str(config_path),
-            "invoke",
+            "manage", "invoke",
             "create-item",
             "--input-json",
             '{"name":"demo"}',
@@ -428,7 +428,7 @@ mounts:
         [
             "--config",
             str(config_path),
-            "invoke",
+            "manage", "invoke",
             "search-items",
             "--input-json",
             '{"q":"demo"}',

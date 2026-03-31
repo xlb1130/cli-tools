@@ -140,7 +140,7 @@ class TestLogQueryAPIs:
             
             result = runner.invoke(
                 main,
-                ["--config", str(config_path), "source", "add", "http", "test", "--base-url", "https://example.com", "--format", "json"],
+                ["--config", str(config_path), "manage", "source", "add", "http", "test", "--base-url", "https://example.com", "--format", "json"],
             )
             
             # The config should have been loaded and logged
@@ -155,7 +155,7 @@ class TestLogQueryAPIs:
             
             result = runner.invoke(
                 main,
-                ["--config", str(config_path), "sync", "--format", "json"],
+                ["--config", str(config_path), "manage", "sync", "--format", "json"],
             )
             
             # Sync should emit discovery events

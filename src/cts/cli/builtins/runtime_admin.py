@@ -42,8 +42,8 @@ def register_runtime_admin_commands(
             if name:
                 payload = build_auth_profile(app, name)
                 payload["next_commands"] = [
-                    f"cts auth validate {name}",
-                    f"cts auth refresh {name}",
+                    f"cts manage auth validate {name}",
+                    f"cts manage auth refresh {name}",
                 ]
             else:
                 payload = build_auth_inventory(app)
@@ -152,7 +152,7 @@ def register_runtime_admin_commands(
     def secret_show(app, name: str, output_format: str) -> None:
         try:
             payload = build_secret_detail(app, name)
-            payload["next_commands"] = ["cts secret list", "cts auth status"]
+            payload["next_commands"] = ["cts manage secret list", "cts manage auth status"]
             click.echo(render_payload(payload, output_format))
         except Exception as exc:
             fail(click.get_current_context(), exc, "secret_show", output_format)

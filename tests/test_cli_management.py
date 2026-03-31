@@ -1,11 +1,13 @@
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import yaml
 from click.testing import CliRunner
 
 import cts.cli.root as root_module
+from cts.cli.dynamic import _mount_short_help
 from cts.cli.root import main
 from cts.providers import mcp_cli
 
@@ -19,6 +21,17 @@ def _load_trailing_json(output: str) -> dict:
     return json.loads(output[start:])
 
 
+def test_root_help_only_exposes_manage_for_admin_commands():
+    runner = CliRunner()
+    result = runner.invoke(main, ["--help"])
+
+    assert result.exit_code == 0
+    assert "manage  CTS administration and maintenance commands." in result.output
+    assert "source      Source registry operations." not in result.output
+    assert "auth        Authentication status commands." not in result.output
+    assert "invoke      Invoke a mounted capability with validated input." not in result.output
+
+
 def test_source_add_creates_default_root_config():
     runner = CliRunner()
     with runner.isolated_filesystem():
@@ -27,7 +40,7 @@ def test_source_add_creates_default_root_config():
         
         result = runner.invoke(
             main,
-            ["--config", str(config_path), "source", "add", "http", "jira", "--base-url", "https://jira.example.com", "--format", "json"],
+            ["--config", str(config_path), "manage", "source", "add", "http", "jira", "--base-url", "https://jira.example.com", "--format", "json"],
         )
 
         assert result.exit_code == 0
@@ -50,7 +63,7 @@ def test_mount_add_and_alias_add_enable_dynamic_command():
             [
                 "--config",
                 str(config_path),
-                "source",
+                "manage", "source",
                 "add",
                 "http",
                 "jira",
@@ -67,7 +80,7 @@ def test_mount_add_and_alias_add_enable_dynamic_command():
             [
                 "--config",
                 str(config_path),
-                "mount",
+                "manage", "mount",
                 "add",
                 "jira",
                 "get_issue",
@@ -94,7 +107,7 @@ def test_mount_add_and_alias_add_enable_dynamic_command():
             [
                 "--config",
                 str(config_path),
-                "alias",
+                "manage", "alias",
                 "add",
                 "issue get",
                 "ops jira issue get",
@@ -110,7 +123,7 @@ def test_mount_add_and_alias_add_enable_dynamic_command():
 
         mount_show = runner.invoke(
             main,
-            ["--config", str(config_path), "mount", "show", "jira-get-issue", "--format", "json"],
+            ["--config", str(config_path), "manage", "mount", "show", "jira-get-issue", "--format", "json"],
         )
         assert mount_show.exit_code == 0
         mount_show_payload = json.loads(mount_show.output)
@@ -166,12 +179,43 @@ def test_import_mcp_apply_persists_source_and_mounts(tmp_path: Path, monkeypatch
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     assert raw["sources"]["cn12306"]["type"] == "mcp"
     assert raw["sources"]["cn12306"]["config_file"] == str(config_path.parent / "servers.json")
+    assert raw["sources"]["cn12306"]["imported_cli_groups"] == [
+        {
+            "path": ["cn12306"],
+            "summary": "Imported MCP tools",
+            "description": "Imported MCP tools from server 'cn12306-server'.",
+        }
+    ]
     assert raw["mounts"][0]["id"] == "cn12306-query_train"
     assert raw["mounts"][0]["command"]["path"] == ["cn12306", "query_train"]
 
     help_result = runner.invoke(main, ["--config", str(config_path), "cn12306", "--help"])
     assert help_result.exit_code == 0
+    assert "Imported MCP tools from server 'cn12306-server'." in help_result.output
+    assert "query_train  Query train tickets" in help_result.output
     assert "Query train tickets" in help_result.output
+
+
+def test_mount_short_help_prefers_description_when_summary_is_command_label():
+    mount = SimpleNamespace(
+        summary="query_train",
+        description="Query train tickets",
+        command_path=["cn12306", "query_train"],
+        operation=SimpleNamespace(id="query_train", title="query_train", description="Query train tickets"),
+    )
+
+    assert _mount_short_help(mount, help_content={"summary": "query_train"}) == "Query train tickets"
+
+
+def test_mount_short_help_keeps_meaningful_summary():
+    mount = SimpleNamespace(
+        summary="Train Search",
+        description="Query train tickets",
+        command_path=["cn12306", "query_train"],
+        operation=SimpleNamespace(id="query_train", title="query_train", description="Query train tickets"),
+    )
+
+    assert _mount_short_help(mount, help_content={"summary": "Train Search"}) == "Train Search"
 
 
 def test_import_shell_apply_persists_source_and_mount_and_executes(tmp_path: Path):
@@ -485,7 +529,7 @@ def test_source_add_and_mount_add_can_target_loaded_split_files():
             [
                 "--config",
                 str(root_config),
-                "source",
+                "manage", "source",
                 "add",
                 "http",
                 "jira",
@@ -504,7 +548,7 @@ def test_source_add_and_mount_add_can_target_loaded_split_files():
             [
                 "--config",
                 str(root_config),
-                "mount",
+                "manage", "mount",
                 "add",
                 "jira",
                 "get_issue",
@@ -525,7 +569,7 @@ def test_source_add_and_mount_add_can_target_loaded_split_files():
 
 def test_completion_script_outputs_shell_source():
     runner = CliRunner()
-    result = runner.invoke(main, ["completion", "script", "--shell", "zsh"])
+    result = runner.invoke(main, ["manage", "completion", "script", "--shell", "zsh"])
 
     assert result.exit_code == 0
     assert "_CTS_COMPLETE" in result.output
@@ -552,7 +596,7 @@ reliability:
 
         result = runner.invoke(
             main,
-            ["--config", str(config_path), "doctor", "--format", "json"],
+            ["--config", str(config_path), "manage", "doctor", "--format", "json"],
         )
 
         assert result.exit_code == 0
@@ -574,7 +618,7 @@ def test_source_remove_deletes_source():
             [
                 "--config",
                 str(config_path),
-                "source",
+                "manage", "source",
                 "add",
                 "http",
                 "test-api",
@@ -596,7 +640,7 @@ def test_source_remove_deletes_source():
             [
                 "--config",
                 str(config_path),
-                "source",
+                "manage", "source",
                 "remove",
                 "test-api",
                 "--format",
@@ -625,7 +669,7 @@ def test_source_remove_fails_if_not_found():
             [
                 "--config",
                 str(config_path),
-                "source",
+                "manage", "source",
                 "remove",
                 "nonexistent",
                 "--format",
@@ -646,7 +690,7 @@ def test_source_remove_with_dependent_mounts():
             [
                 "--config",
                 str(config_path),
-                "source",
+                "manage", "source",
                 "add",
                 "http",
                 "test-api",
@@ -661,7 +705,7 @@ def test_source_remove_with_dependent_mounts():
             [
                 "--config",
                 str(config_path),
-                "mount",
+                "manage", "mount",
                 "add",
                 "test-api",
                 "get_item",
@@ -676,7 +720,7 @@ def test_source_remove_with_dependent_mounts():
             [
                 "--config",
                 str(config_path),
-                "source",
+                "manage", "source",
                 "remove",
                 "test-api",
                 "--format",
@@ -691,7 +735,7 @@ def test_source_remove_with_dependent_mounts():
             [
                 "--config",
                 str(config_path),
-                "source",
+                "manage", "source",
                 "remove",
                 "test-api",
                 "--force",
@@ -716,7 +760,7 @@ def test_mount_remove_deletes_mount():
             [
                 "--config",
                 str(config_path),
-                "source",
+                "manage", "source",
                 "add",
                 "http",
                 "test-api",
@@ -729,7 +773,7 @@ def test_mount_remove_deletes_mount():
             [
                 "--config",
                 str(config_path),
-                "mount",
+                "manage", "mount",
                 "add",
                 "test-api",
                 "get_item",
@@ -749,7 +793,7 @@ def test_mount_remove_deletes_mount():
             [
                 "--config",
                 str(config_path),
-                "mount",
+                "manage", "mount",
                 "remove",
                 "test-mount",
                 "--format",
@@ -808,7 +852,7 @@ sources:
             [
                 "--config",
                 str(config_path),
-                "mount",
+                "manage", "mount",
                 "import",
                 "test-api",
                 "--dry-run",
@@ -857,7 +901,7 @@ sources:
             [
                 "--config",
                 str(config_path),
-                "mount",
+                "manage", "mount",
                 "import",
                 "test-api",
                 "--filter",
@@ -928,7 +972,7 @@ sources:
         [
             "--config",
             str(config_path),
-            "mount",
+            "manage", "mount",
             "import",
             "test-api",
             "--format",
@@ -1136,7 +1180,7 @@ def test_completion_install_zsh():
         result = runner.invoke(
             main,
             [
-                "completion",
+                "manage", "completion",
                 "install",
                 "--shell",
                 "zsh",
@@ -1156,7 +1200,7 @@ def test_completion_bootstrap_zsh():
     result = runner.invoke(
         main,
         [
-            "completion",
+            "manage", "completion",
             "bootstrap",
             "--shell",
             "zsh",
@@ -1172,7 +1216,7 @@ def test_completion_bootstrap_text_mode_is_user_friendly():
     result = runner.invoke(
         main,
         [
-            "completion",
+            "manage", "completion",
             "bootstrap",
             "--shell",
             "zsh",
@@ -1218,11 +1262,11 @@ secrets:
             encoding="utf-8",
         )
 
-        source_result = runner.invoke(main, ["--config", str(config_path), "source", "show", "demo"])
-        mount_result = runner.invoke(main, ["--config", str(config_path), "mount", "show", "demo-ping"])
-        auth_result = runner.invoke(main, ["--config", str(config_path), "auth", "status"])
-        secret_result = runner.invoke(main, ["--config", str(config_path), "secret", "show", "demo_token"])
-        doctor_result = runner.invoke(main, ["--config", str(config_path), "doctor"])
+        source_result = runner.invoke(main, ["--config", str(config_path), "manage", "source", "show", "demo"])
+        mount_result = runner.invoke(main, ["--config", str(config_path), "manage", "mount", "show", "demo-ping"])
+        auth_result = runner.invoke(main, ["--config", str(config_path), "manage", "auth", "status"])
+        secret_result = runner.invoke(main, ["--config", str(config_path), "manage", "secret", "show", "demo_token"])
+        doctor_result = runner.invoke(main, ["--config", str(config_path), "manage", "doctor"])
 
         assert source_result.exit_code == 0
         assert "demo (http)" in source_result.output or "Source demo" in source_result.output
@@ -1232,7 +1276,7 @@ secrets:
         assert "Next Suggested Command" in mount_result.output
         assert auth_result.exit_code == 0
         assert "Auth Profiles" in auth_result.output
-        detail_auth_result = runner.invoke(main, ["--config", str(config_path), "auth", "status", "demo-auth"])
+        detail_auth_result = runner.invoke(main, ["--config", str(config_path), "manage", "auth", "status", "demo-auth"])
         assert detail_auth_result.exit_code == 0
         assert "Next Suggested Command" in detail_auth_result.output
         assert secret_result.exit_code == 0

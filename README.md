@@ -63,7 +63,7 @@ Then inspect the generated dynamic command:
 
 ```bash
 cts hello --help
-cts explain hello
+cts manage explain hello
 ```
 
 This gives you a concrete model of:
@@ -191,7 +191,7 @@ cts manage source remove <source_name> --force --format json
 cts manage invoke <mount-id> --input-json '{"key":"value"}' --format json
 
 # Explain a mount
-cts explain <mount-id> --input-json '{"key":"value"}'
+cts manage explain <mount-id> --input-json '{"key":"value"}'
 ```
 
 ## Development

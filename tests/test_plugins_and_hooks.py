@@ -194,7 +194,7 @@ mounts:
 
         explain_result = runner.invoke(
             main,
-            ["--config", str(config_path), "explain", "plugin-echo", "--input-json", '{"text":"hello"}', "--format", "json"],
+            ["--config", str(config_path), "manage", "explain", "plugin-echo", "--input-json", '{"text":"hello"}', "--format", "json"],
         )
         assert explain_result.exit_code == 0
         explain_payload = json.loads(explain_result.output)
@@ -231,7 +231,7 @@ plugins:
             [
                 "--config",
                 str(config_path),
-                "source",
+                "manage", "source",
                 "add",
                 "plugin_echo",
                 "plugin_source",
@@ -305,7 +305,7 @@ mounts:
 
         result = runner.invoke(
             main,
-            ["--config", str(config_path), "explain", "plugin-echo", "--input-json", '{"text":"hello"}', "--format", "json"],
+            ["--config", str(config_path), "manage", "explain", "plugin-echo", "--input-json", '{"text":"hello"}', "--format", "json"],
         )
         assert result.exit_code == 0
         payload = json.loads(result.output)
@@ -334,7 +334,7 @@ mounts:
             }
         ]
 
-        doctor_result = runner.invoke(main, ["--config", str(config_path), "doctor", "--format", "json"])
+        doctor_result = runner.invoke(main, ["--config", str(config_path), "manage", "doctor", "--format", "json"])
         assert doctor_result.exit_code == 0
         assert '"plugin_provider_conflicts"' in doctor_result.output
 

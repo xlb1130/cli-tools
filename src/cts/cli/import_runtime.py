@@ -75,6 +75,13 @@ def execute_import_mcp(
             "config_file": str(servers_json_path),
             "server": actual_server_name,
             "discovery": {"mode": "live"},
+            "imported_cli_groups": [
+                {
+                    "path": [source_name],
+                    "summary": "Imported MCP tools",
+                    "description": f"Imported MCP tools from server '{actual_server_name}'.",
+                }
+            ],
         }
 
     if progress is not None:

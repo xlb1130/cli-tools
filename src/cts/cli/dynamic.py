@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect as pyinspect
+import re
 from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional
 
@@ -148,17 +149,41 @@ def build_static_help_command(mount: Any, callback: Callable) -> click.Command:
 
 def _mount_short_help(mount: Any, help_content: Optional[Dict[str, str]] = None) -> str:
     summary = (help_content or {}).get("summary") or (help_content or {}).get("short_help")
-    if summary:
-        return str(summary).strip().splitlines()[0]
     description = (
         mount.description
         or mount.operation.description
         or (help_content or {}).get("description")
         or (help_content or {}).get("help")
     )
+    if summary:
+        summary_line = str(summary).strip().splitlines()[0]
+        description_line = str(description).strip().splitlines()[0] if description else ""
+        if description_line and _summary_looks_like_command_label(summary_line, mount):
+            return description_line
+        return summary_line
     if description:
         return str(description).strip().splitlines()[0]
     return mount.summary or mount.operation.title
+
+
+def _summary_looks_like_command_label(summary: str, mount: Any) -> bool:
+    normalized_summary = _normalize_help_label(summary)
+    if not normalized_summary:
+        return False
+
+    candidates = {
+        _normalize_help_label(mount.operation.id),
+        _normalize_help_label(mount.operation.title),
+        _normalize_help_label(mount.command_path[-1] if mount.command_path else ""),
+        _normalize_help_label(" ".join(mount.command_path or [])),
+        _normalize_help_label(".".join(mount.command_path or [])),
+    }
+    return normalized_summary in {candidate for candidate in candidates if candidate}
+
+
+def _normalize_help_label(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    return re.sub(r"[^a-z0-9]+", "", text)
 
 
 class LazyDynamicCommand(GroupedOptionCommand):

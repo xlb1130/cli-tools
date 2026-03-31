@@ -182,8 +182,8 @@ def register_mount_commands(
                 "created_file": session.created,
                 "warnings": list(session.warnings),
                 "next_commands": [
-                    f"cts mount show {final_mount_id}",
-                    "cts mount list",
+                    f"cts manage mount show {final_mount_id}",
+                    "cts manage mount list",
                 ],
                 "config": find_mount_payload(updated.get("mounts", []), final_mount_id),
                 "compiled": build_mount_details(compiled_app, compiled_mount) if compiled_app and compiled_mount else None,
@@ -211,7 +211,7 @@ def register_mount_commands(
         payload = build_mount_details(app, mount)
         payload["next_commands"] = [
             f"cts {' '.join(mount.command_path)} --help",
-            f"cts runs list --mount-id {mount_id}",
+            f"cts manage runs list --mount-id {mount_id}",
         ]
         click.echo(render_payload(payload, output_format))
 
@@ -265,7 +265,7 @@ def register_mount_commands(
                 "file": str(session.target_path),
                 "source": mount.source_name,
                 "operation_id": mount.operation.id,
-                "next_command": "cts mount list",
+                "next_command": "cts manage mount list",
             }
             click.echo(render_payload(payload, output_format))
         except Exception as exc:

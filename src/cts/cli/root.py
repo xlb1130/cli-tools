@@ -783,7 +783,3 @@ def _fail(
     click.echo(render_payload(payload, output_format))
     ctx.exit(exit_code_for_exception(exc, stage))
 
-
-for _command_name, _command in manage.commands.items():
-    if _command_name not in main.commands:
-        main.add_command(_command, name=_command_name)

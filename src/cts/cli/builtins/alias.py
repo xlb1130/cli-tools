@@ -83,7 +83,7 @@ def register_alias_commands(
                 "mount_id": resolved_alias_mount.mount_id if resolved_alias_mount else target_mount.mount_id,
                 "next_commands": [
                     f"cts {' '.join(from_tokens)} --help",
-                    "cts alias list",
+                    "cts manage alias list",
                 ],
                 "config": find_alias_payload(updated.get("aliases", []), from_tokens),
             }
@@ -132,7 +132,7 @@ def register_alias_commands(
                 "warnings": list(session.warnings),
                 "alias": removed,
                 "remaining_count": len(updated.get("aliases", [])),
-                "next_command": "cts alias list",
+                "next_command": "cts manage alias list",
             }
             click.echo(render_payload(payload, output_format))
         except Exception as exc:

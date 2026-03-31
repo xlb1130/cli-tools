@@ -22,7 +22,7 @@ cts hello
 
 ```bash
 cts hello --help
-cts explain hello
+cts manage explain hello
 cts manage source show hello --format json
 ```
 

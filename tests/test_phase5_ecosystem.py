@@ -573,7 +573,7 @@ mounts:
         runner = CliRunner()
         result = runner.invoke(
             main,
-            ["--config", str(config_path), "explain", "ext-echo", "--input-json", '{"text":"hello"}', "--format", "json"],
+            ["--config", str(config_path), "manage", "explain", "ext-echo", "--input-json", '{"text":"hello"}', "--format", "json"],
         )
 
         assert result.exit_code == 0
@@ -594,7 +594,7 @@ class TestCLIWorkflowCommands:
             
             result = runner.invoke(
                 main,
-                ["--config", str(config_path), "workflow", "list", "--format", "json"],
+                ["--config", str(config_path), "manage", "workflow", "list", "--format", "json"],
             )
             
             assert result.exit_code == 0
@@ -642,7 +642,7 @@ class TestCLIServeCommands:
                 
                 result = runner.invoke(
                     main,
-                    ["--config", str(config_path), "serve", "http"],
+                    ["--config", str(config_path), "manage", "serve", "http"],
                 )
                 
                 # The output should contain JSON or be from a KeyboardInterrupt
@@ -663,7 +663,7 @@ class TestCLIServeCommands:
 
                 result = runner.invoke(
                     main,
-                    ["--config", str(config_path), "serve", "http", "--open", "--format", "json"],
+                    ["--config", str(config_path), "manage", "serve", "http", "--open", "--format", "json"],
                 )
 
                 assert result.exit_code == 0
@@ -687,7 +687,7 @@ class TestCLIServeCommands:
 
                 result = runner.invoke(
                     main,
-                    ["--config", str(config_path), "ui", "--open", "--format", "json"],
+                    ["--config", str(config_path), "manage", "ui", "--open", "--format", "json"],
                 )
 
                 assert result.exit_code == 0

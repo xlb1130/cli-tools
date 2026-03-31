@@ -269,7 +269,7 @@ def test_render_payload_formats_action_result_as_result_card():
         "file": "/tmp/cts.yaml",
         "created_file": True,
         "warnings": ["imported into new file"],
-        "next_commands": ["cts source show jira", "cts source test jira"],
+        "next_commands": ["cts manage source show jira", "cts manage source test jira"],
     }
 
     output = render_payload(payload, "text")
@@ -279,7 +279,7 @@ def test_render_payload_formats_action_result_as_result_card():
     assert "Where Written" in output
     assert "Warnings" in output
     assert "Next Suggested Command" in output
-    assert "cts source show jira" in output
+    assert "cts manage source show jira" in output
 
 
 def test_render_payload_formats_completion_bootstrap_text():
@@ -329,7 +329,7 @@ def test_render_payload_formats_source_detail_with_next_commands():
         "discovery_state": {"ok": True},
         "drift_state": {"status": "clean"},
         "operation_ids": ["ping", "list_items"],
-        "next_commands": ["cts source test demo", "cts mount import demo --dry-run"],
+        "next_commands": ["cts manage source test demo", "cts manage mount import demo --dry-run"],
     }
 
     output = render_payload(payload, "text")
@@ -337,7 +337,7 @@ def test_render_payload_formats_source_detail_with_next_commands():
     assert "Source demo (http)" in output
     assert "Operation IDs" in output or "ping" in output
     assert "Next Suggested Command" in output
-    assert "cts source test demo" in output
+    assert "cts manage source test demo" in output
 
 
 def test_render_payload_formats_mount_detail_with_next_commands():
@@ -350,7 +350,7 @@ def test_render_payload_formats_mount_detail_with_next_commands():
         "risk": "read",
         "stable_name": "demo_ping",
         "aliases": [["d", "ping"]],
-        "next_commands": ["cts demo ping --help", "cts runs list --mount-id demo-ping"],
+        "next_commands": ["cts demo ping --help", "cts manage runs list --mount-id demo-ping"],
     }
 
     output = render_payload(payload, "text")
@@ -358,7 +358,7 @@ def test_render_payload_formats_mount_detail_with_next_commands():
     assert "Mount demo-ping" in output
     assert "Aliases" in output
     assert "Next Suggested Command" in output
-    assert "cts runs list --mount-id demo-ping" in output
+    assert "cts manage runs list --mount-id demo-ping" in output
 
 
 def test_render_payload_formats_execution_result_with_duration_and_output():

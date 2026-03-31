@@ -63,7 +63,7 @@ cts hello
 
 ```bash
 cts hello --help
-cts explain hello
+cts manage explain hello
 ```
 
 你会看到：
@@ -191,7 +191,7 @@ cts manage source remove <source_name> --force --format json
 cts manage invoke <mount-id> --input-json '{"key":"value"}' --format json
 
 # 解释 mount
-cts explain <mount-id> --input-json '{"key":"value"}'
+cts manage explain <mount-id> --input-json '{"key":"value"}'
 ```
 
 ## 开发

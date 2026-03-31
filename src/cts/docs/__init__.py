@@ -166,17 +166,17 @@ class DocsGenerator:
         return {
             "title": "CLI Reference",
             "commands": [
-                "config",
-                "source",
-                "mount",
-                "invoke",
-                "explain",
-                "catalog",
-                "sync",
-                "doctor",
-                "serve",
-                "auth",
-                "completion",
+                "manage config",
+                "manage source",
+                "manage mount",
+                "manage invoke",
+                "manage explain",
+                "manage catalog",
+                "manage sync",
+                "manage doctor",
+                "manage serve",
+                "manage auth",
+                "manage completion",
             ],
         }
     
@@ -373,17 +373,17 @@ class DocsGenerator:
         ]
         
         commands = [
-            ("config", "Configuration management"),
-            ("source", "Source registry operations"),
-            ("mount", "Mount registry operations"),
-            ("invoke", "Invoke a mount by ID"),
-            ("explain", "Explain a mount execution plan"),
-            ("catalog", "Export capability catalog"),
-            ("sync", "Synchronize discovery cache"),
-            ("doctor", "Run diagnostics"),
-            ("serve", "Start northbound surfaces"),
-            ("auth", "Authentication management"),
-            ("completion", "Shell completion helpers"),
+            ("manage config", "Configuration management"),
+            ("manage source", "Source registry operations"),
+            ("manage mount", "Mount registry operations"),
+            ("manage invoke", "Invoke a mount by ID"),
+            ("manage explain", "Explain a mount execution plan"),
+            ("manage catalog", "Export capability catalog"),
+            ("manage sync", "Synchronize discovery cache"),
+            ("manage doctor", "Run diagnostics"),
+            ("manage serve", "Start northbound surfaces"),
+            ("manage auth", "Authentication management"),
+            ("manage completion", "Shell completion helpers"),
         ]
         
         for cmd, desc in commands:

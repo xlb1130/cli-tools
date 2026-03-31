@@ -65,7 +65,7 @@ mounts:
     )
 
     runner = CliRunner()
-    result = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    result = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert result.exit_code == 0
 
     payload = json.loads(result.output)
@@ -158,7 +158,7 @@ mounts:
 
     inspect_result = runner.invoke(
         main,
-        ["--config", str(config_path), "inspect", "operation", "remote_mcp", "bing_search", "--format", "json"],
+        ["--config", str(config_path), "manage", "inspect", "operation", "remote_mcp", "bing_search", "--format", "json"],
     )
     assert inspect_result.exit_code == 0
     inspect_payload = json.loads(inspect_result.output)
@@ -387,13 +387,13 @@ mounts:
     _write_manifest(manifest_path, [operation_v1])
 
     runner = CliRunner()
-    first = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    first = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert first.exit_code == 0
     first_payload = json.loads(first.output)
     assert first_payload["items"][0]["drift"]["status"] == "initial"
 
     _write_manifest(manifest_path, [operation_v2])
-    second = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    second = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert second.exit_code == 0
     payload = json.loads(second.output)
     item = payload["items"][0]
@@ -406,7 +406,7 @@ mounts:
     report = json.loads(Path(payload["report_path"]).read_text(encoding="utf-8"))
     assert report["drift_summary"]["severity"] == "additive"
 
-    inspect_result = runner.invoke(main, ["--config", str(config_path), "inspect", "drift", "demo_cli", "--format", "json"])
+    inspect_result = runner.invoke(main, ["--config", str(config_path), "manage", "inspect", "drift", "demo_cli", "--format", "json"])
     assert inspect_result.exit_code == 0
     inspect_payload = json.loads(inspect_result.output)
     assert inspect_payload["drift_summary"]["severity"] == "additive"
@@ -457,7 +457,7 @@ mounts:
     )
 
     runner = CliRunner()
-    first = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    first = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert first.exit_code == 0
 
     _write_manifest(
@@ -473,7 +473,7 @@ mounts:
             )
         ],
     )
-    second = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    second = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert second.exit_code == 0
     payload = json.loads(second.output)
 
@@ -487,7 +487,7 @@ mounts:
     assert mount_state["severity"] == "additive"
     assert mount_state["blocked"] is False
 
-    inspect_mount = runner.invoke(main, ["--config", str(config_path), "inspect", "mount", "demo.greet", "--format", "json"])
+    inspect_mount = runner.invoke(main, ["--config", str(config_path), "manage", "inspect", "mount", "demo.greet", "--format", "json"])
     assert inspect_mount.exit_code == 0
     assert json.loads(inspect_mount.output)["drift_state"]["status"] == "accepted"
 
@@ -497,7 +497,7 @@ mounts:
 
     invoke_result = runner.invoke(
         main,
-        ["--config", str(config_path), "invoke", "demo.greet", "--input-json", '{"name":"Alice","count":2}', "--format", "json"],
+        ["--config", str(config_path), "manage", "invoke", "demo.greet", "--input-json", '{"name":"Alice","count":2}', "--format", "json"],
     )
     assert invoke_result.exit_code == 0
 
@@ -545,11 +545,11 @@ mounts:
     _write_manifest(manifest_path, [first_operation])
 
     runner = CliRunner()
-    first = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    first = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert first.exit_code == 0
 
     _write_manifest(manifest_path, [second_operation])
-    second = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    second = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert second.exit_code == 0
     payload = json.loads(second.output)
 
@@ -620,11 +620,11 @@ mounts:
     _write_manifest(manifest_path, [operation_v1])
 
     runner = CliRunner()
-    first = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    first = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert first.exit_code == 0
 
     _write_manifest(manifest_path, [operation_v2])
-    second = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    second = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert second.exit_code == 0
     payload = json.loads(second.output)
     item = payload["items"][0]
@@ -677,7 +677,7 @@ mounts:
         ],
     )
     runner = CliRunner()
-    first = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    first = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert first.exit_code == 0
 
     _write_manifest(
@@ -693,10 +693,10 @@ mounts:
             )
         ],
     )
-    second = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    second = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert second.exit_code == 0
 
-    inspect_result = runner.invoke(main, ["--config", str(config_path), "inspect", "mount", "demo.greet", "--format", "json"])
+    inspect_result = runner.invoke(main, ["--config", str(config_path), "manage", "inspect", "mount", "demo.greet", "--format", "json"])
     assert inspect_result.exit_code == 0
     inspect_payload = json.loads(inspect_result.output)
     assert inspect_payload["drift_state"]["status"] == "frozen"
@@ -710,7 +710,7 @@ mounts:
 
     invoke_result = runner.invoke(
         main,
-        ["--config", str(config_path), "invoke", "demo.greet", "--input-json", '{"name":"Alice","region":"cn"}', "--format", "json"],
+        ["--config", str(config_path), "manage", "invoke", "demo.greet", "--input-json", '{"name":"Alice","region":"cn"}', "--format", "json"],
     )
     assert invoke_result.exit_code == 5
     assert '"type": "PolicyError"' in invoke_result.output
@@ -718,13 +718,13 @@ mounts:
 
     explain_result = runner.invoke(
         main,
-        ["--config", str(config_path), "explain", "demo.greet", "--input-json", '{"name":"Alice","region":"cn"}', "--format", "json"],
+        ["--config", str(config_path), "manage", "explain", "demo.greet", "--input-json", '{"name":"Alice","region":"cn"}', "--format", "json"],
     )
     assert explain_result.exit_code == 0
 
     reconcile_result = runner.invoke(
         main,
-        ["--config", str(config_path), "reconcile", "drift", "demo_cli", "--format", "json"],
+        ["--config", str(config_path), "manage", "reconcile", "drift", "demo_cli", "--format", "json"],
     )
     assert reconcile_result.exit_code == 0
     reconcile_payload = json.loads(reconcile_result.output)
@@ -735,13 +735,13 @@ mounts:
 
     invoke_after_reconcile = runner.invoke(
         main,
-        ["--config", str(config_path), "invoke", "demo.greet", "--input-json", '{"name":"Alice","region":"cn"}', "--format", "json"],
+        ["--config", str(config_path), "manage", "invoke", "demo.greet", "--input-json", '{"name":"Alice","region":"cn"}', "--format", "json"],
     )
     assert invoke_after_reconcile.exit_code == 0
 
     inspect_after_reconcile = runner.invoke(
         main,
-        ["--config", str(config_path), "inspect", "mount", "demo.greet", "--format", "json"],
+        ["--config", str(config_path), "manage", "inspect", "mount", "demo.greet", "--format", "json"],
     )
     assert inspect_after_reconcile.exit_code == 0
     assert json.loads(inspect_after_reconcile.output)["drift_state"]["status"] == "accepted"
@@ -792,7 +792,7 @@ mounts:
         ],
     )
     runner = CliRunner()
-    first = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    first = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert first.exit_code == 0
 
     _write_manifest(
@@ -808,10 +808,10 @@ mounts:
             )
         ],
     )
-    second = runner.invoke(main, ["--config", str(config_path), "sync", "--format", "json"])
+    second = runner.invoke(main, ["--config", str(config_path), "manage", "sync", "--format", "json"])
     assert second.exit_code == 0
 
-    inspect_result = runner.invoke(main, ["--config", str(config_path), "inspect", "mount", "demo.greet", "--format", "json"])
+    inspect_result = runner.invoke(main, ["--config", str(config_path), "manage", "inspect", "mount", "demo.greet", "--format", "json"])
     assert inspect_result.exit_code == 0
     inspect_payload = json.loads(inspect_result.output)
     assert inspect_payload["drift_state"]["status"] == "review_required"
@@ -820,14 +820,14 @@ mounts:
 
     invoke_result = runner.invoke(
         main,
-        ["--config", str(config_path), "invoke", "demo.greet", "--input-json", '{"name":"Alice","region":"cn"}', "--format", "json"],
+        ["--config", str(config_path), "manage", "invoke", "demo.greet", "--input-json", '{"name":"Alice","region":"cn"}', "--format", "json"],
     )
     assert invoke_result.exit_code == 5
     assert '"code": "mount_requires_drift_review"' in invoke_result.output
 
     inspect_drift_result = runner.invoke(
         main,
-        ["--config", str(config_path), "inspect", "drift", "demo_cli", "--format", "json"],
+        ["--config", str(config_path), "manage", "inspect", "drift", "demo_cli", "--format", "json"],
     )
     assert inspect_drift_result.exit_code == 0
     inspect_drift_payload = json.loads(inspect_drift_result.output)

@@ -33,7 +33,7 @@ mounts:
     )
 
     runner = CliRunner()
-    result = runner.invoke(main, ["--config", str(config_path), "config", "lint", "--format", "json"])
+    result = runner.invoke(main, ["--config", str(config_path), "manage", "config", "lint", "--format", "json"])
     assert result.exit_code == 2
     assert '"default_profile_not_found"' in result.output
     assert '"unsupported_provider_type"' in result.output
@@ -78,43 +78,43 @@ mounts:
     runner = CliRunner()
     invoke_result = runner.invoke(
         main,
-        ["--config", str(config_path), "invoke", "demo-echo", "--input-json", '{"text":"hello"}', "--format", "json"],
+        ["--config", str(config_path), "manage", "invoke", "demo-echo", "--input-json", '{"text":"hello"}', "--format", "json"],
     )
     assert invoke_result.exit_code == 0
     assert '"run_id"' in invoke_result.output
 
-    runs_result = runner.invoke(main, ["--config", str(config_path), "runs", "list", "--format", "json"])
+    runs_result = runner.invoke(main, ["--config", str(config_path), "manage", "runs", "list", "--format", "json"])
     assert runs_result.exit_code == 0
     assert '"mount_id": "demo-echo"' in runs_result.output
 
     runs_filtered_result = runner.invoke(
         main,
-        ["--config", str(config_path), "runs", "list", "--mount-id", "demo-echo", "--ok", "true", "--format", "json"],
+        ["--config", str(config_path), "manage", "runs", "list", "--mount-id", "demo-echo", "--ok", "true", "--format", "json"],
     )
     assert runs_filtered_result.exit_code == 0
     assert '"mount_id": "demo-echo"' in runs_filtered_result.output
 
-    doctor_result = runner.invoke(main, ["--config", str(config_path), "doctor", "--format", "json"])
+    doctor_result = runner.invoke(main, ["--config", str(config_path), "manage", "doctor", "--format", "json"])
     assert doctor_result.exit_code == 0
     assert '"runtime_paths"' in doctor_result.output
 
     logs_result = runner.invoke(
         main,
-        ["--config", str(config_path), "logs", "recent", "--limit", "10", "--event", "invoke_complete", "--format", "json"],
+        ["--config", str(config_path), "manage", "logs", "recent", "--limit", "10", "--event", "invoke_complete", "--format", "json"],
     )
     assert logs_result.exit_code == 0
     assert '"event": "invoke_complete"' in logs_result.output
 
     watch_result = runner.invoke(
         main,
-        ["--config", str(config_path), "logs", "watch", "--limit", "10", "--iterations", "1", "--event", "invoke_start", "--format", "json"],
+        ["--config", str(config_path), "manage", "logs", "watch", "--limit", "10", "--iterations", "1", "--event", "invoke_start", "--format", "json"],
     )
     assert watch_result.exit_code == 0
     assert '"event": "invoke_start"' in watch_result.output
 
     runs_watch_result = runner.invoke(
         main,
-        ["--config", str(config_path), "runs", "watch", "--limit", "10", "--iterations", "1", "--mount-id", "demo-echo", "--format", "json"],
+        ["--config", str(config_path), "manage", "runs", "watch", "--limit", "10", "--iterations", "1", "--mount-id", "demo-echo", "--format", "json"],
     )
     assert runs_watch_result.exit_code == 0
     assert '"run_id"' in runs_watch_result.output

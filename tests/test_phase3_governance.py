@@ -231,7 +231,7 @@ class TestCLIConfigMigrate:
             
             result = runner.invoke(
                 main,
-                ["--config", str(config_path), "config", "migrate", "--format", "json"],
+                ["--config", str(config_path), "manage", "config", "migrate", "--format", "json"],
             )
             
             assert result.exit_code == 0
@@ -247,7 +247,7 @@ class TestCLIConfigMigrate:
             
             result = runner.invoke(
                 main,
-                ["--config", str(config_path), "config", "migrate", "--dry-run", "--format", "json"],
+                ["--config", str(config_path), "manage", "config", "migrate", "--dry-run", "--format", "json"],
             )
             
             assert result.exit_code == 0
@@ -267,7 +267,7 @@ class TestCLIConfigMigrate:
 
             result = runner.invoke(
                 main,
-                ["--config", str(config_path), "config", "migrate", "--format", "json"],
+                ["--config", str(config_path), "manage", "config", "migrate", "--format", "json"],
             )
 
             assert result.exit_code == 0
@@ -290,7 +290,7 @@ class TestCLIAuthValidate:
             
             result = runner.invoke(
                 main,
-                ["--config", str(config_path), "auth", "validate", "--all", "--format", "json"],
+                ["--config", str(config_path), "manage", "auth", "validate", "--all", "--format", "json"],
             )
             
             assert result.exit_code == 0
@@ -310,7 +310,7 @@ class TestCLIDoctorEnhanced:
             
             result = runner.invoke(
                 main,
-                ["--config", str(config_path), "doctor", "--compatibility", "--format", "json"],
+                ["--config", str(config_path), "manage", "doctor", "--compatibility", "--format", "json"],
             )
             
             assert result.exit_code == 0
@@ -326,7 +326,7 @@ class TestCLIDoctorEnhanced:
             
             result = runner.invoke(
                 main,
-                ["--config", str(config_path), "doctor", "--auth", "--format", "json"],
+                ["--config", str(config_path), "manage", "doctor", "--auth", "--format", "json"],
             )
             
             assert result.exit_code == 0

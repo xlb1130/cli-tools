@@ -222,8 +222,8 @@ def register_source_commands(
                 "created_file": session.created,
                 "warnings": list(session.warnings),
                 "next_commands": [
-                    f"cts source show {source_name}",
-                    f"cts source test {source_name}",
+                    f"cts manage source show {source_name}",
+                    f"cts manage source test {source_name}",
                 ],
                 "config": strip_internal_metadata(updated.get("sources", {}).get(source_name, {})),
             }
@@ -249,8 +249,8 @@ def register_source_commands(
             return
         payload = build_source_details(app, source_name, source)
         payload["next_commands"] = [
-            f"cts source test {source_name}",
-            f"cts mount import {source_name} --dry-run",
+            f"cts manage source test {source_name}",
+            f"cts manage mount import {source_name} --dry-run",
         ]
         click.echo(render_payload(payload, output_format))
 
@@ -370,7 +370,7 @@ def register_source_commands(
                 "source_name": source_name,
                 "file": str(session.target_path),
                 "removed_mounts": [m.mount_id for m in dependent_mounts] if dependent_mounts else [],
-                "next_command": "cts source list",
+                "next_command": "cts manage source list",
             }
             click.echo(render_payload(payload, output_format))
         except Exception as exc:

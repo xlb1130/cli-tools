@@ -33,7 +33,7 @@ cts hello --help
 ## 第二步：看执行计划
 
 ```bash
-cts explain hello
+cts manage explain hello
 ```
 
 这一步的目的是建立一个直觉：
@@ -81,5 +81,5 @@ cts <path...> [args]
 
 # 看内部编译结果
 cts manage ...
-cts explain ...
+cts manage explain ...
 ```
