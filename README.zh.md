@@ -25,6 +25,7 @@
 - [OpenAPI](docs/usage/05-openapi/README.md)
 - [GraphQL](docs/usage/06-graphql/README.md)
 - [MCP Server](docs/usage/07-mcp/README.md)
+- [高阶实战：行程规划](docs/usage/13-travel-planning/README.md)
 - [高阶实战：自动问题分析、自动需求开发与自动部署](docs/usage/12-advanced-automation/README.md)
 - [Mount 设计](docs/usage/08-mounts/README.md)
 - [执行方式](docs/usage/09-execution/README.md)

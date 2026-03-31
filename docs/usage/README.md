@@ -60,10 +60,12 @@ cts import wizard <provider-type>
 
 ### 第 5 步：进入高阶自动化实战
 
+13. [高阶实战：行程规划](13-travel-planning/README.md)
 12. [高阶实战：自动问题分析、自动需求开发与自动部署](12-advanced-automation/README.md)
 
-这一篇更适合在你已经掌握 MCP、mount、execution 之后再看，因为它关注的是：
+这两篇更适合在你已经掌握 MCP、mount、execution 之后再看，因为它们关注的是：
 
+- 怎么把地图、铁路、搜索这类 MCP 能力编排成出行规划
 - 怎么把多个 MCP 能力编排成完整链路
 - 怎么组织自动分析、自动开发、自动部署这类场景
 - 怎么做权限边界和落地顺序控制
@@ -92,6 +94,7 @@ cts import wizard <provider-type>
 - 想导入一个单独命令：看 [本地 CLI](02-local-cli/README.md)
 - 想导入一整棵子命令树：看 [本地 CLI](02-local-cli/README.md)
 - 想接入远端 MCP tools：看 [MCP Server](07-mcp/README.md)
+- 想把高德 MCP、12306 MCP、必应搜索串成出行方案：看 [高阶实战：行程规划](13-travel-planning/README.md)
 - 想把多个 MCP 串成问题分析、需求开发、部署链路：看 [高阶实战：自动问题分析、自动需求开发与自动部署](12-advanced-automation/README.md)
 - 想理解命令路径、稳定 id、alias：看 [Mount 设计](08-mounts/README.md)
 - 想理解 `invoke` 和 `explain`：看 [执行方式](09-execution/README.md)
