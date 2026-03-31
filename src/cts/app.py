@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from cts.app_drift import (
     snapshot_age_seconds as _snapshot_age_seconds,
@@ -57,6 +57,7 @@ class CTSApp:
         compile_mode: str = "full",
         target_source_names: Optional[List[str]] = None,
         load_drift_governance: bool = True,
+        progress_callback: Optional[Callable[[str], None]] = None,
     ) -> None:
         self.loaded_config = loaded_config
         self.config = loaded_config.config
@@ -66,6 +67,7 @@ class CTSApp:
         self.compile_mode = compile_mode
         self.target_source_names = set(target_source_names or [])
         self.load_drift_governance = load_drift_governance
+        self.progress_callback = progress_callback
         self.plugin_manager = PluginManager(loaded_config)
         self.provider_registry = ProviderRegistry()
         self.plugin_manager.register_providers(self.provider_registry)
@@ -83,25 +85,26 @@ class CTSApp:
         self.discovery_errors: Dict[str, str] = {}
         self.discovery_state: Dict[str, Dict[str, Any]] = {}
         self.catalog = Catalog()
-        self._compile()
-        self.dispatch_hooks("app.init", {"app": self})
-        emit_app_event(
-            self,
-            event="config_merge_complete",
-            data={
-                "config_files": [str(path) for path in self.config_paths],
-                "source_count": len(self.config.sources),
-                "mount_count": len(self.config.mounts),
-                "plugin_count": len(self.config.plugins),
-                "hook_count": len(self.config.hooks),
-                "discovery_error_count": len(self.discovery_errors),
-            },
-        )
-        emit_app_event(
-            self,
-            event="profile_resolved",
-            data={"profile": self.active_profile},
-        )
+        if self.compile_mode != "minimal":
+            self._compile()
+            self.dispatch_hooks("app.init", {"app": self})
+            emit_app_event(
+                self,
+                event="config_merge_complete",
+                data={
+                    "config_files": [str(path) for path in self.config_paths],
+                    "source_count": len(self.config.sources),
+                    "mount_count": len(self.config.mounts),
+                    "plugin_count": len(self.config.plugins),
+                    "hook_count": len(self.config.hooks),
+                    "discovery_error_count": len(self.discovery_errors),
+                },
+            )
+            emit_app_event(
+                self,
+                event="profile_resolved",
+                data={"profile": self.active_profile},
+            )
 
     @property
     def config_paths(self) -> List[Path]:
@@ -290,13 +293,28 @@ class CTSApp:
 
     def _compile(self) -> None:
         discovery_mode = "help" if self.compile_mode == "help" else "compile"
+        self._report_progress(f"Loading config ({self.compile_mode})")
         self._discover_source_operations(mode=discovery_mode)
+        self._report_progress("Compiling mounts")
         self._compile_mounts()
+        self._report_progress("Compiling aliases")
         self._compile_aliases()
+        self._report_progress("Compiling command groups")
         self._compile_group_help()
 
+    def _report_progress(self, message: str) -> None:
+        if self.progress_callback is not None:
+            self.progress_callback(message)
+
     def _discover_source_operations(self, *, mode: str = "compile") -> None:
-        for source_name, source_config in self.config.sources.items():
+        enabled_sources = [
+            (source_name, source_config)
+            for source_name, source_config in self.config.sources.items()
+            if source_config.enabled and (not self.target_source_names or source_name in self.target_source_names)
+        ]
+        total_sources = len(enabled_sources)
+        for index, (source_name, source_config) in enumerate(enabled_sources, start=1):
+            self._report_progress(f"Discovering sources ({index}/{total_sources}): {source_name or '<default>'}")
             if not source_config.enabled:
                 continue
             if self.target_source_names and source_name not in self.target_source_names:
@@ -304,7 +322,14 @@ class CTSApp:
             self._discover_source(source_name, source_config, mode=mode)
 
     def _compile_mounts(self) -> None:
-        for mount in self.config.mounts:
+        eligible_mounts = [
+            mount
+            for mount in self.config.mounts
+            if not self.target_source_names or mount.source in self.target_source_names
+        ]
+        total_mounts = len(eligible_mounts)
+        for index, mount in enumerate(eligible_mounts, start=1):
+            self._report_progress(f"Compiling mounts ({index}/{total_mounts}): {mount.id}")
             if self.target_source_names and mount.source not in self.target_source_names:
                 continue
             source_config = self.config.sources.get(mount.source)
@@ -333,7 +358,9 @@ class CTSApp:
             self.catalog.add_mount(generated_mount)
 
     def _compile_aliases(self) -> None:
-        for raw in self.config.aliases:
+        total_aliases = len(self.config.aliases)
+        for index, raw in enumerate(self.config.aliases, start=1):
+            self._report_progress(f"Compiling aliases ({index}/{total_aliases})")
             alias_from = raw.get("from")
             alias_to = raw.get("to")
             if not isinstance(alias_from, list) or not isinstance(alias_to, list):
@@ -346,7 +373,9 @@ class CTSApp:
     def _compile_group_help(self) -> None:
         if self.compile_mode == "invoke" and self.target_source_names:
             return
-        for source_name, source_config in self.config.sources.items():
+        total_sources = len(self.config.sources)
+        for index, (source_name, source_config) in enumerate(self.config.sources.items(), start=1):
+            self._report_progress(f"Compiling command groups ({index}/{total_sources}): {source_name or '<default>'}")
             if self.target_source_names and source_name not in self.target_source_names:
                 continue
             model_extra = getattr(source_config, "model_extra", None) or {}
@@ -484,6 +513,7 @@ def build_app(
     compile_mode: str = "full",
     target_source_names: Optional[List[str]] = None,
     load_drift_governance: bool = True,
+    progress_callback: Optional[Callable[[str], None]] = None,
 ) -> CTSApp:
     return CTSApp(
         load_config(config_path, target_source_names=target_source_names),
@@ -493,4 +523,5 @@ def build_app(
         compile_mode=compile_mode,
         target_source_names=target_source_names,
         load_drift_governance=load_drift_governance,
+        progress_callback=progress_callback,
     )

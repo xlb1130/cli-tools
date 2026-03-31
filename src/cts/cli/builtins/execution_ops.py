@@ -120,7 +120,7 @@ def register_execution_ops_commands(
     def reconcile() -> None:
         """Drift reconciliation commands."""
 
-    @reconcile.command("drift")
+    @reconcile.command(name="drift", help="Reconcile blocking discovery drift for a source.", short_help="Reconcile blocking discovery drift for a source.")
     @click.argument("source_name")
     @click.option("--action", "reconcile_action", type=click.Choice(["accept-breaking"]), default="accept-breaking", show_default=True)
     @click.option("--yes", is_flag=True, help="Skip interactive confirmation.")

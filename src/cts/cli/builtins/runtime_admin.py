@@ -20,6 +20,8 @@ def register_runtime_admin_commands(
     manage_group,
     *,
     pass_app,
+    pass_help_app,
+    pass_minimal_app,
     fail: Callable,
     maybe_confirm: Callable,
 ) -> None:
@@ -27,16 +29,16 @@ def register_runtime_admin_commands(
     def auth() -> None:
         """Authentication status commands."""
 
-    @auth.command("list")
+    @auth.command(name="list", help="List authentication profiles.", short_help="List authentication profiles.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_minimal_app
     def auth_list(app, output_format: str) -> None:
         click.echo(render_payload(build_auth_inventory(app), output_format))
 
-    @auth.command("status")
+    @auth.command(name="status", help="Show authentication status for one or all profiles.", short_help="Show authentication status for one or all profiles.")
     @click.argument("name", required=False)
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_minimal_app
     def auth_status(app, name: Optional[str], output_format: str) -> None:
         try:
             if name:
@@ -51,7 +53,7 @@ def register_runtime_admin_commands(
         except Exception as exc:
             fail(click.get_current_context(), exc, "auth_status", output_format)
 
-    @auth.command("login")
+    @auth.command(name="login", help="Store credentials for an auth profile.", short_help="Store credentials for an auth profile.")
     @click.argument("name")
     @click.option("--token", default=None)
     @click.option("--api-key", default=None)
@@ -63,7 +65,7 @@ def register_runtime_admin_commands(
     @click.option("--in", "location", type=click.Choice(["header", "query"]), default=None, help="API key location override.")
     @click.option("--query-name", default=None, help="Query parameter name for api_key profiles.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_minimal_app
     def auth_login(
         app,
         name: str,
@@ -99,10 +101,10 @@ def register_runtime_admin_commands(
         except Exception as exc:
             fail(click.get_current_context(), exc, "auth_login", output_format)
 
-    @auth.command("refresh")
+    @auth.command(name="refresh", help="Refresh an auth profile.", short_help="Refresh an auth profile.")
     @click.argument("name")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_minimal_app
     def auth_refresh(app, name: str, output_format: str) -> None:
         try:
             payload = {"ok": True, "action": "auth_refresh", "profile": app.auth_manager.refresh(name)}
@@ -110,11 +112,11 @@ def register_runtime_admin_commands(
         except Exception as exc:
             fail(click.get_current_context(), exc, "auth_refresh", output_format)
 
-    @auth.command("logout")
+    @auth.command(name="logout", help="Remove stored credentials for an auth profile.", short_help="Remove stored credentials for an auth profile.")
     @click.argument("name")
     @click.option("--yes", is_flag=True, help="Skip interactive confirmation.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_minimal_app
     def auth_logout(app, name: str, yes: bool, output_format: str) -> None:
         try:
             maybe_confirm(f"Log out auth profile '{name}'?", assume_yes=yes, output_format=output_format)
@@ -123,11 +125,11 @@ def register_runtime_admin_commands(
         except Exception as exc:
             fail(click.get_current_context(), exc, "auth_logout", output_format)
 
-    @auth.command("validate")
+    @auth.command(name="validate", help="Validate one or all auth profiles.", short_help="Validate one or all auth profiles.")
     @click.argument("name", required=False)
     @click.option("--all", "validate_all", is_flag=True, help="Validate all auth profiles.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_minimal_app
     def auth_validate(app, name: Optional[str], validate_all: bool, output_format: str) -> None:
         try:
             payload = app.auth_manager.validate_all() if validate_all or not name else app.auth_manager.validate(name)
@@ -139,16 +141,16 @@ def register_runtime_admin_commands(
     def secret() -> None:
         """Secret inventory commands."""
 
-    @secret.command("list")
+    @secret.command(name="list", help="List available secret references.", short_help="List available secret references.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_minimal_app
     def secret_list(app, output_format: str) -> None:
         click.echo(render_payload(build_secret_inventory(app), output_format))
 
-    @secret.command("show")
+    @secret.command(name="show", help="Show details for a secret reference.", short_help="Show details for a secret reference.")
     @click.argument("name")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_minimal_app
     def secret_show(app, name: str, output_format: str) -> None:
         try:
             payload = build_secret_detail(app, name)
@@ -161,13 +163,13 @@ def register_runtime_admin_commands(
     def runs() -> None:
         """Run history inspection commands."""
 
-    @runs.command("list")
+    @runs.command(name="list", help="List recent execution runs.", short_help="List recent execution runs.")
     @click.option("--limit", type=click.IntRange(1, 200), default=20, show_default=True)
     @click.option("--mount-id", default=None, help="Filter by mount id.")
     @click.option("--source", default=None, help="Filter by source name.")
     @click.option("--ok", "ok_only", type=click.Choice(["true", "false"]), default=None, help="Filter by success state.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_minimal_app
     def runs_list(app, limit: int, mount_id: Optional[str], source: Optional[str], ok_only: Optional[str], output_format: str) -> None:
         items = list_runs(app, limit=max(limit * 5, limit))
         if mount_id:
@@ -183,10 +185,10 @@ def register_runtime_admin_commands(
         }
         click.echo(render_payload(payload, output_format))
 
-    @runs.command("show")
+    @runs.command(name="show", help="Show details for a recorded run.", short_help="Show details for a recorded run.")
     @click.argument("run_id")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_minimal_app
     def runs_show(app, run_id: str, output_format: str) -> None:
         payload = get_run(app, run_id)
         if payload is None:
@@ -194,7 +196,7 @@ def register_runtime_admin_commands(
             return
         click.echo(render_payload(payload, output_format))
 
-    @runs.command("watch")
+    @runs.command(name="watch", help="Watch recent execution runs for new entries.", short_help="Watch recent execution runs for new entries.")
     @click.option("--limit", type=click.IntRange(1, 200), default=20, show_default=True)
     @click.option("--interval", type=click.FloatRange(0.2, 60.0), default=2.0, show_default=True)
     @click.option("--iterations", type=click.IntRange(1, 1000), default=None, help="Stop after N refresh cycles.")
@@ -202,7 +204,7 @@ def register_runtime_admin_commands(
     @click.option("--source", default=None, help="Filter by source name.")
     @click.option("--ok", "ok_only", type=click.Choice(["true", "false"]), default=None, help="Filter by success state.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_minimal_app
     def runs_watch(app, limit: int, interval: float, iterations: Optional[int], mount_id: Optional[str], source: Optional[str], ok_only: Optional[str], output_format: str) -> None:
         seen: set[str] = set()
         cycle = 0
@@ -232,14 +234,14 @@ def register_runtime_admin_commands(
     def logs() -> None:
         """Application log inspection commands."""
 
-    @logs.command("recent")
+    @logs.command(name="recent", help="Show recent application log events.", short_help="Show recent application log events.")
     @click.option("--limit", type=click.IntRange(1, 200), default=20, show_default=True)
     @click.option("--level", default=None, help="Filter by log level.")
     @click.option("--source", default=None, help="Filter by source name.")
     @click.option("--mount-id", default=None, help="Filter by mount id.")
     @click.option("--event", "event_name", default=None, help="Filter by exact event name.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_minimal_app
     def logs_recent(app, limit: int, level: Optional[str], source: Optional[str], mount_id: Optional[str], event_name: Optional[str], output_format: str) -> None:
         items = list_app_events(app, limit=limit, events=[event_name] if event_name else None, level=level, source=source, mount_id=mount_id)
         payload = {
@@ -248,7 +250,7 @@ def register_runtime_admin_commands(
         }
         click.echo(render_payload(payload, output_format))
 
-    @logs.command("watch")
+    @logs.command(name="watch", help="Watch application log events for new entries.", short_help="Watch application log events for new entries.")
     @click.option("--limit", type=click.IntRange(1, 200), default=20, show_default=True)
     @click.option("--interval", type=click.FloatRange(0.2, 60.0), default=2.0, show_default=True)
     @click.option("--iterations", type=click.IntRange(1, 1000), default=None, help="Stop after N refresh cycles.")
@@ -257,7 +259,7 @@ def register_runtime_admin_commands(
     @click.option("--mount-id", default=None, help="Filter by mount id.")
     @click.option("--event", "event_name", default=None, help="Filter by exact event name.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_minimal_app
     def logs_watch(app, limit: int, interval: float, iterations: Optional[int], level: Optional[str], source: Optional[str], mount_id: Optional[str], event_name: Optional[str], output_format: str) -> None:
         seen: set[tuple[str, str, str, str]] = set()
         cycle = 0

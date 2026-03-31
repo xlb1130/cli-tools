@@ -25,6 +25,7 @@ class CLIState:
     requested_command_path: tuple[str, ...] = ()
     static_catalog_builder: Optional[StaticCatalogBuilder] = field(default=None, repr=False)
     _help_app: Any = field(default=None, init=False, repr=False)
+    _minimal_app: Any = field(default=None, init=False, repr=False)
     _full_app: Any = field(default=None, init=False, repr=False)
     _invoke_app: Any = field(default=None, init=False, repr=False)
     _static_help_catalog: Any = field(default=None, init=False, repr=False)
@@ -37,12 +38,26 @@ class CLIState:
     def get_command_scopes(self):
         return resolve_command_scopes(self.requested_command_path)
 
-    def get_app(self, mode: str = "auto") -> Any:
+    def get_app(self, mode: str = "auto", progress_callback: Optional[Callable[[str], None]] = None) -> Any:
         resolved_mode = (
             resolve_auto_mode(self.requested_command_path, help_requested=self.help_requested)
             if mode == "auto"
             else mode
         )
+        if resolved_mode == "minimal":
+            if self._full_app is not None:
+                return self._full_app
+            if self._minimal_app is None:
+                self._minimal_app = build_app(
+                    str(self.config_path) if self.config_path else None,
+                    profile=self.profile,
+                    compile_mode="minimal",
+                    load_drift_governance=False,
+                    progress_callback=progress_callback,
+                )
+                setattr(self._minimal_app, "global_output", self.global_output)
+            return self._minimal_app
+
         if resolved_mode == "help":
             if self._full_app is not None:
                 return self._full_app
@@ -52,6 +67,7 @@ class CLIState:
                     profile=self.profile,
                     compile_mode="help",
                     load_drift_governance=False,
+                    progress_callback=progress_callback,
                 )
                 setattr(self._help_app, "global_output", self.global_output)
             return self._help_app
@@ -68,6 +84,7 @@ class CLIState:
                     compile_mode="invoke",
                     target_source_names=target_sources,
                     load_drift_governance=True,
+                    progress_callback=progress_callback,
                 )
                 setattr(self._invoke_app, "global_output", self.global_output)
             return self._invoke_app
@@ -81,6 +98,7 @@ class CLIState:
                     self.requested_command_path,
                     help_requested=self.help_requested,
                 ),
+                progress_callback=progress_callback,
             )
             setattr(self._full_app, "global_output", self.global_output)
         return self._full_app
@@ -194,5 +212,10 @@ def get_state(ctx: click.Context, static_catalog_builder: StaticCatalogBuilder) 
     return root.obj
 
 
-def get_app(ctx: click.Context, static_catalog_builder: StaticCatalogBuilder, mode: str = "auto") -> Any:
-    return get_state(ctx, static_catalog_builder).get_app(mode=mode)
+def get_app(
+    ctx: click.Context,
+    static_catalog_builder: StaticCatalogBuilder,
+    mode: str = "auto",
+    progress_callback: Optional[Callable[[str], None]] = None,
+) -> Any:
+    return get_state(ctx, static_catalog_builder).get_app(mode=mode, progress_callback=progress_callback)

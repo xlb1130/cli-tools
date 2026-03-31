@@ -27,8 +27,12 @@ def build_dynamic_callback(
         status_label = f"Invoke {mount.mount_id}"
         start_perf = time.perf_counter()
         try:
-            with elapsed_status(output_format, status_label):
-                app = get_app(ctx, mode="invoke")
+            with elapsed_status(output_format, status_label) as status_handle:
+                app = get_app(
+                    ctx,
+                    mode="invoke",
+                    progress_callback=lambda message: status_handle.update(f"{status_label}: {message}"),
+                )
                 runtime_mount = app.catalog.find_by_id(mount.mount_id) or mount
                 run_mount_command(
                     app,

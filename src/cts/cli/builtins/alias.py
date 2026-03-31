@@ -13,6 +13,7 @@ def register_alias_commands(
     alias_group,
     *,
     pass_app,
+    pass_help_app,
     get_state: Callable,
     fail: Callable,
     maybe_confirm: Callable,
@@ -21,9 +22,9 @@ def register_alias_commands(
     split_command_segments: Callable,
     find_alias_payload: Callable,
 ) -> None:
-    @alias_group.command("list")
+    @alias_group.command(name="list", help="List configured command aliases.", short_help="List configured command aliases.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_help_app
     def alias_list(app, output_format: str) -> None:
         items = []
         for raw in app.config.aliases:
@@ -32,7 +33,7 @@ def register_alias_commands(
             items.append({"from": raw.get("from"), "to": raw.get("to")})
         click.echo(render_payload({"items": items}, output_format))
 
-    @alias_group.command("add")
+    @alias_group.command(name="add", help="Create an alias for an existing command path.", short_help="Create an alias for an existing command path.")
     @click.argument("alias_from")
     @click.argument("alias_to")
     @click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Write into a specific loaded config file.")
@@ -91,7 +92,7 @@ def register_alias_commands(
         except Exception as exc:
             fail(ctx, exc, "alias_add", output_format)
 
-    @alias_group.command("remove")
+    @alias_group.command(name="remove", help="Remove a configured command alias.", short_help="Remove a configured command alias.")
     @click.argument("alias_from")
     @click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Remove from a specific loaded config file.")
     @click.option("--yes", is_flag=True, help="Skip interactive confirmation.")

@@ -89,7 +89,7 @@ def register_surface_commands(
         finally:
             server.server_close()
 
-    @serve.command("http")
+    @serve.command(name="http", help="Start the HTTP API server.", short_help="Start the HTTP API server.")
     @click.option("--host", default="127.0.0.1", show_default=True)
     @click.option("--port", type=int, default=8787, show_default=True)
     @click.option("--ui", "serve_ui", is_flag=True, help="Also serve the built frontend UI if available.")
@@ -108,7 +108,7 @@ def register_surface_commands(
             output_format=output_format,
         )
 
-    @manage_group.command("ui")
+    @manage_group.command(name="ui", help="Start the HTTP API together with the bundled frontend UI.", short_help="Start the HTTP API together with the bundled frontend UI.")
     @click.option("--host", default="127.0.0.1", show_default=True)
     @click.option("--port", type=int, default=8787, show_default=True)
     @click.option("--ui-dir", type=click.Path(path_type=Path, file_okay=False), default=None, help="Explicit frontend dist directory.")
@@ -127,7 +127,7 @@ def register_surface_commands(
             output_format=output_format,
         )
 
-    @serve.command("jsonrpc")
+    @serve.command(name="jsonrpc", help="Start the JSON-RPC 2.0 server for CTS API.", short_help="Start the JSON-RPC 2.0 server for CTS API.")
     @click.option("--host", default="127.0.0.1", show_default=True)
     @click.option("--port", type=int, default=8788, show_default=True)
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
@@ -149,7 +149,7 @@ def register_surface_commands(
         )
         serve_jsonrpc(app, host=host, port=port)
 
-    @serve.command("mcp")
+    @serve.command(name="mcp", help="Start the MCP server exposing CTS mounts as tools.", short_help="Start the MCP server exposing CTS mounts as tools.")
     @click.option("--host", default="127.0.0.1", show_default=True)
     @click.option("--port", type=int, default=8789, show_default=True)
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")

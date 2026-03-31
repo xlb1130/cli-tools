@@ -15,7 +15,7 @@ def register_inspect_commands(
     fail: Callable,
     path_to_str: Callable,
 ) -> None:
-    @inspect_group.command("mount")
+    @inspect_group.command(name="mount", help="Inspect the compiled details of a mount.", short_help="Inspect the compiled details of a mount.")
     @click.argument("mount_id")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
     @pass_app
@@ -26,7 +26,7 @@ def register_inspect_commands(
             return
         click.echo(render_payload(build_mount_details(app, mount), output_format))
 
-    @inspect_group.command("source")
+    @inspect_group.command(name="source", help="Inspect the compiled details of a source.", short_help="Inspect the compiled details of a source.")
     @click.argument("source_name")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
     @pass_app
@@ -37,7 +37,7 @@ def register_inspect_commands(
             return
         click.echo(render_payload(build_source_details(app, source_name, source), output_format))
 
-    @inspect_group.command("operation")
+    @inspect_group.command(name="operation", help="Inspect a compiled operation and schema provenance.", short_help="Inspect a compiled operation and schema provenance.")
     @click.argument("source_name")
     @click.argument("operation_id")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
@@ -59,7 +59,7 @@ def register_inspect_commands(
         payload["schema_provenance"] = schema_info[1] if schema_info else None
         click.echo(render_payload(payload, output_format))
 
-    @inspect_group.command("drift")
+    @inspect_group.command(name="drift", help="Inspect the latest discovery drift report.", short_help="Inspect the latest discovery drift report.")
     @click.argument("source_name", required=False)
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
     @pass_app

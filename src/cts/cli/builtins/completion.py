@@ -16,7 +16,7 @@ def register_completion_commands(manage_group, *, main_group) -> None:
     def completion() -> None:
         """Shell completion helpers."""
 
-    @completion.command("script")
+    @completion.command(name="script", help="Print the shell completion script.", short_help="Print the shell completion script.")
     @click.option("--shell", "shell_name", type=click.Choice(["bash", "zsh", "fish"]), required=True)
     def completion_script(shell_name: str) -> None:
         completion_class = get_completion_class(shell_name)
@@ -27,7 +27,7 @@ def register_completion_commands(manage_group, *, main_group) -> None:
         shell_complete = completion_class(main_group, {}, prog_name, complete_var)
         click.echo(shell_complete.source())
 
-    @completion.command("install")
+    @completion.command(name="install", help="Install shell completion for cts.", short_help="Install shell completion for cts.")
     @click.option("--shell", "shell_name", type=click.Choice(["bash", "zsh", "fish"]), required=False, help="Shell type (auto-detected if not specified).")
     @click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Write to a specific file instead of the default shell config.")
     @click.option("--append", is_flag=True, help="Append to config file instead of replacing existing cts completion.")
@@ -123,7 +123,7 @@ def register_completion_commands(manage_group, *, main_group) -> None:
 
         click.echo(render_payload(payload, output_format))
 
-    @completion.command("bootstrap")
+    @completion.command(name="bootstrap", help="Bootstrap shell completion for the current session.", short_help="Bootstrap shell completion for the current session.")
     @click.option("--shell", "shell_name", type=click.Choice(["bash", "zsh", "fish"]), required=False, help="Shell type (auto-detected if not specified).")
     @click.option("--format", "output_format", type=click.Choice(["shell", "text", "json"]), default="shell")
     def completion_bootstrap(shell_name: Optional[str], output_format: str) -> None:

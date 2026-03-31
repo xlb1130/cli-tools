@@ -29,7 +29,7 @@ def register_import_commands(
     render_payload: Callable,
     **_: Any,
 ) -> None:
-    @import_group.command("wizard")
+    @import_group.command(name="wizard", help="Run the provider import wizard.", short_help="Run the provider import wizard.")
     @click.argument("provider_type", required=False)
     @click.option("--apply", is_flag=True, help="Apply imported source/mount changes.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")

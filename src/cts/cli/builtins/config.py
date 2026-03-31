@@ -15,6 +15,7 @@ def register_config_group(
     manage_group,
     *,
     pass_app,
+    pass_help_app,
     get_state: Callable,
     fail: Callable,
     serialize_error: Callable,
@@ -24,9 +25,9 @@ def register_config_group(
     def config() -> None:
         """Configuration inspection commands."""
 
-    @config.command("paths")
+    @config.command(name="paths", help="Show root and loaded config paths.", short_help="Show root and loaded config paths.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_help_app
     def config_paths(app, output_format: str) -> None:
         payload = {
             "root_paths": [str(path) for path in app.loaded_config.root_paths],
@@ -34,9 +35,9 @@ def register_config_group(
         }
         click.echo(render_payload(payload, output_format))
 
-    @config.command("build")
+    @config.command(name="build", help="Render the merged config payload.", short_help="Render the merged config payload.")
     @click.option("--format", "output_format", type=click.Choice(["json", "yaml"]), default="yaml")
-    @pass_app
+    @pass_help_app
     def config_build(app, output_format: str) -> None:
         payload = {
             "root_paths": [str(path) for path in app.loaded_config.root_paths],
@@ -48,7 +49,7 @@ def register_config_group(
             return
         click.echo(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True))
 
-    @config.command("lint")
+    @config.command(name="lint", help="Lint config files and optional runtime state.", short_help="Lint config files and optional runtime state.")
     @click.option("--compile", "compile_runtime", is_flag=True, help="Compile the runtime and surface conflicts/discovery errors.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
     @click.pass_context
@@ -116,7 +117,7 @@ def register_config_group(
         if not payload["ok"]:
             ctx.exit(2)
 
-    @config.command("migrate")
+    @config.command(name="migrate", help="Migrate configuration to the latest version.", short_help="Migrate configuration to the latest version.")
     @click.option("--dry-run", is_flag=True, help="Preview changes without applying them.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
     @click.pass_context

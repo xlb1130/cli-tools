@@ -22,6 +22,7 @@ def register_mount_commands(
     mount_group,
     *,
     pass_app,
+    pass_help_app,
     get_state: Callable,
     fail: Callable,
     maybe_confirm: Callable,
@@ -33,7 +34,7 @@ def register_mount_commands(
     parse_assignment_value: Callable,
     find_mount_payload: Callable,
 ) -> None:
-    @mount_group.command("add")
+    @mount_group.command(name="add", help="Create a stable mount for a source operation.", short_help="Create a stable mount for a source operation.")
     @click.argument("source_name")
     @click.argument("operation_id")
     @click.option("--id", "mount_id", default=None, help="Stable mount id. Defaults to <source>-<operation>.")
@@ -192,17 +193,17 @@ def register_mount_commands(
         except Exception as exc:
             fail(ctx, exc, "mount_add", output_format)
 
-    @mount_group.command("list")
+    @mount_group.command(name="list", help="List compiled mounts and conflicts.", short_help="List compiled mounts and conflicts.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_help_app
     def mount_list(app, output_format: str) -> None:
         payload = {"mounts": [mount.to_summary() for mount in app.catalog.mounts], "conflicts": app.catalog.conflicts}
         click.echo(render_payload(payload, output_format))
 
-    @mount_group.command("show")
+    @mount_group.command(name="show", help="Show details for a mount.", short_help="Show details for a mount.")
     @click.argument("mount_id")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_help_app
     def mount_show(app, mount_id: str, output_format: str) -> None:
         mount = app.catalog.find_by_id(mount_id)
         if not mount:
@@ -215,7 +216,7 @@ def register_mount_commands(
         ]
         click.echo(render_payload(payload, output_format))
 
-    @mount_group.command("remove")
+    @mount_group.command(name="remove", help="Remove a mount from the config.", short_help="Remove a mount from the config.")
     @click.argument("mount_id")
     @click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Remove from a specific config file.")
     @click.option("--yes", is_flag=True, help="Skip interactive confirmation.")
@@ -271,7 +272,7 @@ def register_mount_commands(
         except Exception as exc:
             fail(ctx, exc, "mount_remove", output_format)
 
-    @mount_group.command("import")
+    @mount_group.command(name="import", help="Import mounts from discovered source operations.", short_help="Import mounts from discovered source operations.")
     @click.argument("source_name")
     @click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Write to a specific config file.")
     @click.option("--prefix", default=None, help="Mount ID prefix (default: source name).")

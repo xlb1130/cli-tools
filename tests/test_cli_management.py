@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import yaml
 from click.testing import CliRunner
+import click
 
 import cts.cli.root as root_module
 from cts.cli.dynamic import _mount_short_help
@@ -30,6 +31,60 @@ def test_root_help_only_exposes_manage_for_admin_commands():
     assert "source      Source registry operations." not in result.output
     assert "auth        Authentication status commands." not in result.output
     assert "invoke      Invoke a mounted capability with validated input." not in result.output
+
+
+def test_minimal_build_does_not_emit_bootstrap_log_events(tmp_path: Path):
+    config_path = tmp_path / "cts.yaml"
+    config_path.write_text(
+        f"""
+version: 1
+app:
+  log_dir: {tmp_path / "logs"}
+  state_dir: {tmp_path / "state"}
+sources: {{}}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    from cts.app import build_app
+    from cts.execution.logging import list_app_events
+
+    app = build_app(str(config_path), compile_mode="minimal", load_drift_governance=False)
+
+    assert list_app_events(app, limit=10) == []
+
+
+def test_manage_source_help_shows_subcommand_descriptions():
+    runner = CliRunner()
+    result = runner.invoke(main, ["manage", "source", "--help"])
+
+    assert result.exit_code == 0
+    assert "add                Register a source in the config." in result.output
+    assert "import-completion  Import shell completion data into a source manifest." in result.output
+    assert "import-help        Import CLI help output into a source manifest." in result.output
+    assert "import-manpage     Import man page content into a source manifest." in result.output
+    assert "import-schema      Import JSON schema data into a source manifest." in result.output
+    assert "list               List registered sources." in result.output
+    assert "remove             Remove a source from the config." in result.output
+    assert "show               Show details for a source." in result.output
+    assert "test               Run health checks for a source." in result.output
+
+
+def test_all_builtin_commands_have_short_descriptions():
+    missing: list[str] = []
+
+    def walk(group: click.MultiCommand, prefix: tuple[str, ...] = ()) -> None:
+        for name, command in group.commands.items():
+            path = prefix + (name,)
+            short = command.get_short_help_str(limit=1000).strip()
+            if not short:
+                missing.append(" ".join(path))
+            if isinstance(command, click.MultiCommand):
+                walk(command, path)
+
+    walk(main)
+    assert missing == []
 
 
 def test_source_add_creates_default_root_config():

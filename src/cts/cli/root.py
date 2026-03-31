@@ -88,6 +88,14 @@ def pass_app(func):
     return _pass_app_mode("full", func)
 
 
+def pass_help_app(func):
+    return _pass_app_mode("help", func)
+
+
+def pass_minimal_app(func):
+    return _pass_app_mode("minimal", func)
+
+
 def _pass_app_mode(mode: str, func):
     @click.pass_context
     def wrapper(ctx: click.Context, *args, **kwargs):
@@ -95,8 +103,12 @@ def _pass_app_mode(mode: str, func):
         start_perf = time.perf_counter()
         ctx.meta["cts_app_load_started_at"] = start_perf
         try:
-            with _elapsed_status(output_format, _command_loading_label(ctx, mode)):
-                app = _get_app(ctx, mode=mode)
+            with _elapsed_status(output_format, _command_loading_label(ctx, mode)) as status_handle:
+                app = _get_app(
+                    ctx,
+                    mode=mode,
+                    progress_callback=lambda message: status_handle.update(f"{_command_loading_label(ctx, mode)}: {message}"),
+                )
         except Exception as exc:
             _fail(ctx, exc, "config_load", output_format)
             return None
@@ -264,6 +276,8 @@ register_builtin_commands(
     inspect=inspect,
     deps={
         "pass_app": pass_app,
+        "pass_help_app": pass_help_app,
+        "pass_minimal_app": pass_minimal_app,
         "pass_invoke_app": pass_invoke_app,
         "get_state": lambda ctx: _get_state(ctx),
         "fail": lambda ctx, exc, stage, output_format: _fail(ctx, exc, stage, output_format),
@@ -300,7 +314,7 @@ register_builtin_commands(
 def _dynamic_callback(mount):
     return build_dynamic_callback(
         mount,
-        get_app=lambda ctx, mode="full": _get_app(ctx, mode=mode),
+        get_app=lambda ctx, mode="full", progress_callback=None: _get_app(ctx, mode=mode, progress_callback=progress_callback),
         fail=lambda ctx, exc, stage, output_format: _fail(ctx, exc, stage, output_format),
         error_output_format=lambda ctx, output_format: _error_output_format(ctx, output_format),
         elapsed_status=lambda output_format, label: _elapsed_status(output_format, label),
@@ -320,8 +334,8 @@ def _run_mount_command(app: CTSApp, mount, kwargs: Dict[str, Any], mode: str, **
     )
 
 
-def _get_app(ctx: click.Context, mode: str = "auto") -> CTSApp:
-    return _cli_get_app(ctx, _build_static_help_catalog, mode=mode)
+def _get_app(ctx: click.Context, mode: str = "auto", progress_callback=None) -> CTSApp:
+    return _cli_get_app(ctx, _build_static_help_catalog, mode=mode, progress_callback=progress_callback)
 
 
 def _get_state(ctx: click.Context) -> CLIState:

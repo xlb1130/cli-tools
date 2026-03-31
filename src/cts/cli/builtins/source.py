@@ -29,6 +29,7 @@ def register_source_commands(
     source_group,
     *,
     pass_app,
+    pass_help_app,
     get_state: Callable,
     fail: Callable,
     maybe_confirm: Callable,
@@ -39,7 +40,11 @@ def register_source_commands(
     parse_string_pair: Callable,
     emit_app_event: Callable,
 ) -> None:
-    @source_group.command("add")
+    @source_group.command(
+        name="add",
+        help="Register a source in the config.",
+        short_help="Register a source in the config.",
+    )
     @click.argument("provider_type")
     @click.argument("source_name")
     @click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Write into a specific loaded config file.")
@@ -230,18 +235,24 @@ def register_source_commands(
             click.echo(render_payload(payload, output_format))
         except Exception as exc:
             fail(ctx, exc, "source_add", output_format)
-
-    @source_group.command("list")
+    @source_group.command(
+        name="list",
+        help="List registered sources.",
+        short_help="List registered sources.",
+    )
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_help_app
     def source_list(app, output_format: str) -> None:
         payload = {"items": [build_source_summary(app, name, source) for name, source in app.config.sources.items()]}
         click.echo(render_payload(payload, output_format))
-
-    @source_group.command("show")
+    @source_group.command(
+        name="show",
+        help="Show details for a source.",
+        short_help="Show details for a source.",
+    )
     @click.argument("source_name")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_help_app
     def source_show(app, source_name: str, output_format: str) -> None:
         source = app.config.sources.get(source_name)
         if not source:
@@ -253,8 +264,11 @@ def register_source_commands(
             f"cts manage mount import {source_name} --dry-run",
         ]
         click.echo(render_payload(payload, output_format))
-
-    @source_group.command("test")
+    @source_group.command(
+        name="test",
+        help="Run health checks for a source.",
+        short_help="Run health checks for a source.",
+    )
     @click.argument("source_name")
     @click.option("--discover", is_flag=True, help="Also run source discovery and report discovered operation count.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
@@ -276,8 +290,11 @@ def register_source_commands(
         click.echo(render_payload(payload, output_format))
         if not payload["ok"]:
             click.get_current_context().exit(6)
-
-    @source_group.command("remove")
+    @source_group.command(
+        name="remove",
+        help="Remove a source from the config.",
+        short_help="Remove a source from the config.",
+    )
     @click.argument("source_name")
     @click.option("--file", "target_file", type=click.Path(path_type=Path, dir_okay=False), default=None, help="Remove from a specific config file.")
     @click.option("--force", is_flag=True, help="Force removal even if mounts depend on this source.")
@@ -431,7 +448,11 @@ def register_source_commands(
             final_command = [source.executable] + final_command
         return final_command
 
-    @source_group.command("import-help")
+    @source_group.command(
+        name="import-help",
+        help="Import CLI help output into a source manifest.",
+        short_help="Import CLI help output into a source manifest.",
+    )
     @click.argument("source_name")
     @click.argument("operation_id")
     @click.argument("command_argv", nargs=-1)
@@ -491,8 +512,11 @@ def register_source_commands(
             click.echo(render_payload(payload, output_format))
         except Exception as exc:
             fail(click.get_current_context(), exc, "source_import_help", output_format)
-
-    @source_group.command("import-completion")
+    @source_group.command(
+        name="import-completion",
+        help="Import shell completion data into a source manifest.",
+        short_help="Import shell completion data into a source manifest.",
+    )
     @click.argument("source_name")
     @click.argument("operation_id")
     @click.argument("command_argv", nargs=-1)
@@ -568,8 +592,11 @@ def register_source_commands(
             click.echo(render_payload(payload, output_format))
         except Exception as exc:
             fail(click.get_current_context(), exc, "source_import_completion", output_format)
-
-    @source_group.command("import-manpage")
+    @source_group.command(
+        name="import-manpage",
+        help="Import man page content into a source manifest.",
+        short_help="Import man page content into a source manifest.",
+    )
     @click.argument("source_name")
     @click.argument("operation_id")
     @click.argument("command_argv", nargs=-1)
@@ -635,8 +662,11 @@ def register_source_commands(
             click.echo(render_payload(payload, output_format))
         except Exception as exc:
             fail(click.get_current_context(), exc, "source_import_manpage", output_format)
-
-    @source_group.command("import-schema")
+    @source_group.command(
+        name="import-schema",
+        help="Import JSON schema data into a source manifest.",
+        short_help="Import JSON schema data into a source manifest.",
+    )
     @click.argument("source_name")
     @click.argument("operation_id")
     @click.argument("command_argv", nargs=-1)

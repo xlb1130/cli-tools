@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 
-LoadMode = Literal["help", "invoke", "full"]
+LoadMode = Literal["minimal", "help", "invoke", "full"]
 CommandScope = Literal[
     "config",
     "completion",

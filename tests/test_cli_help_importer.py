@@ -572,7 +572,7 @@ def test_dynamic_callback_starts_elapsed_status_before_loading_app():
         params=[click.Option(["--output-format"], default="text")],
         callback=execution_runtime.build_dynamic_callback(
             mount,
-            get_app=lambda ctx, mode="invoke": events.append("get_app") or app,
+            get_app=lambda ctx, mode="invoke", progress_callback=None: events.append("get_app") or app,
             fail=lambda ctx, exc, stage, output_format: (_ for _ in ()).throw(exc),
             error_output_format=lambda ctx, output_format: output_format or "text",
             elapsed_status=lambda output_format, label: RecordingStatus(),
@@ -606,7 +606,7 @@ def test_pass_app_starts_elapsed_status_before_loading_app(monkeypatch):
             return False
 
     monkeypatch.setattr(root_module, "_elapsed_status", lambda output_format, label: RecordingStatus())
-    monkeypatch.setattr(root_module, "_get_app", lambda ctx, mode="full": events.append(("get_app", mode)) or object())
+    monkeypatch.setattr(root_module, "_get_app", lambda ctx, mode="full", progress_callback=None: events.append(("get_app", mode)) or object())
 
     @click.command()
     @click.option("--output-format", default="text")
@@ -620,6 +620,105 @@ def test_pass_app_starts_elapsed_status_before_loading_app(monkeypatch):
     assert events == [
         "status_enter",
         ("get_app", "full"),
+        "status_exit",
+        "command_body",
+    ]
+
+
+def test_pass_app_updates_loading_message_from_build_progress(monkeypatch):
+    updates = []
+
+    class RecordingStatus:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def update(self, message):
+            updates.append(message)
+
+    def fake_get_app(ctx, mode="full", progress_callback=None):
+        if progress_callback is not None:
+            progress_callback("Discovering sources (1/2): demo")
+            progress_callback("Compiling mounts (2/3): demo.mount")
+        return object()
+
+    monkeypatch.setattr(root_module, "_elapsed_status", lambda output_format, label: RecordingStatus())
+    monkeypatch.setattr(root_module, "_get_app", fake_get_app)
+
+    @click.command()
+    @click.option("--output-format", default="text")
+    @root_module.pass_app
+    def demo(app, output_format):
+        return None
+
+    result = CliRunner().invoke(demo, ["--output-format", "text"])
+
+    assert result.exit_code == 0
+    assert any("Loading demo: Discovering sources (1/2): demo" == item for item in updates)
+    assert any("Loading demo: Compiling mounts (2/3): demo.mount" == item for item in updates)
+
+
+def test_pass_help_app_uses_help_mode(monkeypatch):
+    events = []
+
+    class RecordingStatus:
+        def __enter__(self):
+            events.append("status_enter")
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            events.append("status_exit")
+            return False
+
+    monkeypatch.setattr(root_module, "_elapsed_status", lambda output_format, label: RecordingStatus())
+    monkeypatch.setattr(root_module, "_get_app", lambda ctx, mode="full", progress_callback=None: events.append(("get_app", mode)) or object())
+
+    @click.command()
+    @click.option("--output-format", default="text")
+    @root_module.pass_help_app
+    def demo(app, output_format):
+        events.append("command_body")
+
+    result = CliRunner().invoke(demo, ["--output-format", "text"])
+
+    assert result.exit_code == 0
+    assert events == [
+        "status_enter",
+        ("get_app", "help"),
+        "status_exit",
+        "command_body",
+    ]
+
+
+def test_pass_minimal_app_uses_minimal_mode(monkeypatch):
+    events = []
+
+    class RecordingStatus:
+        def __enter__(self):
+            events.append("status_enter")
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            events.append("status_exit")
+            return False
+
+    monkeypatch.setattr(root_module, "_elapsed_status", lambda output_format, label: RecordingStatus())
+    monkeypatch.setattr(root_module, "_get_app", lambda ctx, mode="full", progress_callback=None: events.append(("get_app", mode)) or object())
+
+    @click.command()
+    @click.option("--output-format", default="text")
+    @root_module.pass_minimal_app
+    def demo(app, output_format):
+        events.append("command_body")
+
+    result = CliRunner().invoke(demo, ["--output-format", "text"])
+
+    assert result.exit_code == 0
+    assert events == [
+        "status_enter",
+        ("get_app", "minimal"),
         "status_exit",
         "command_body",
     ]

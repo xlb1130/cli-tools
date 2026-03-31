@@ -14,6 +14,7 @@ def register_catalog_workflow_commands(
     manage_group,
     *,
     pass_app,
+    pass_help_app,
     get_state: Callable,
     fail: Callable,
 ) -> None:
@@ -21,13 +22,13 @@ def register_catalog_workflow_commands(
     def catalog() -> None:
         """Catalog export commands."""
 
-    @catalog.command("export")
+    @catalog.command(name="export", help="Export the compiled catalog.", short_help="Export the compiled catalog.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
     @pass_app
     def catalog_export(app, output_format: str) -> None:
         click.echo(render_payload(app.export_catalog(), output_format))
 
-    @manage_group.command("docs")
+    @manage_group.command(name="docs", help="Generate documentation from CTS configuration.", short_help="Generate documentation from CTS configuration.")
     @click.argument("output_dir", type=click.Path(path_type=Path), default=Path("docs/generated"))
     @click.option("--title", default="CTS Documentation", help="Documentation title.")
     @click.option("--format", "doc_format", type=click.Choice(["markdown", "html", "json"]), default="markdown")
@@ -73,9 +74,9 @@ def register_catalog_workflow_commands(
     def workflow() -> None:
         """Workflow management commands."""
 
-    @workflow.command("list")
+    @workflow.command(name="list", help="List all configured workflows.", short_help="List all configured workflows.")
     @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
-    @pass_app
+    @pass_help_app
     def workflow_list(app, output_format: str) -> None:
         """List all configured workflows."""
         workflows = [
@@ -85,7 +86,7 @@ def register_catalog_workflow_commands(
         payload = {"workflows": workflows, "count": len(workflows)}
         click.echo(render_payload(payload, output_format))
 
-    @workflow.command("execute")
+    @workflow.command(name="execute", help="Execute a workflow.", short_help="Execute a workflow.")
     @click.argument("workflow_id")
     @click.option("--input-json", default=None, help="JSON input for the workflow.")
     @click.option("--dry-run", is_flag=True, help="Preview execution without running.")

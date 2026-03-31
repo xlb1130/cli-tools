@@ -19,6 +19,7 @@ def register_builtin_commands(*, main, manage, source, import_group, mount, alia
     register_config_group(
         manage,
         pass_app=deps["pass_app"],
+        pass_help_app=deps["pass_help_app"],
         get_state=deps["get_state"],
         fail=deps["fail"],
         serialize_error=deps["serialize_error"],
@@ -28,6 +29,7 @@ def register_builtin_commands(*, main, manage, source, import_group, mount, alia
     register_source_commands(
         source,
         pass_app=deps["pass_app"],
+        pass_help_app=deps["pass_help_app"],
         get_state=deps["get_state"],
         fail=deps["fail"],
         maybe_confirm=deps["maybe_confirm"],
@@ -53,6 +55,7 @@ def register_builtin_commands(*, main, manage, source, import_group, mount, alia
     register_mount_commands(
         mount,
         pass_app=deps["pass_app"],
+        pass_help_app=deps["pass_help_app"],
         get_state=deps["get_state"],
         fail=deps["fail"],
         maybe_confirm=deps["maybe_confirm"],
@@ -68,6 +71,7 @@ def register_builtin_commands(*, main, manage, source, import_group, mount, alia
     register_alias_commands(
         alias_group,
         pass_app=deps["pass_app"],
+        pass_help_app=deps["pass_help_app"],
         get_state=deps["get_state"],
         fail=deps["fail"],
         maybe_confirm=deps["maybe_confirm"],
@@ -80,6 +84,7 @@ def register_builtin_commands(*, main, manage, source, import_group, mount, alia
     register_catalog_workflow_commands(
         manage,
         pass_app=deps["pass_app"],
+        pass_help_app=deps["pass_help_app"],
         get_state=deps["get_state"],
         fail=deps["fail"],
     )
@@ -94,6 +99,8 @@ def register_builtin_commands(*, main, manage, source, import_group, mount, alia
     register_runtime_admin_commands(
         manage,
         pass_app=deps["pass_app"],
+        pass_help_app=deps["pass_help_app"],
+        pass_minimal_app=deps["pass_minimal_app"],
         fail=deps["fail"],
         maybe_confirm=deps["maybe_confirm"],
     )

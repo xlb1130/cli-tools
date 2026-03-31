@@ -156,7 +156,8 @@ cts manage source show my-mcp --format json
 
 ## 下一步
 
-当你已经能把 MCP tool 导进来，接下来通常会看两篇：
+当你已经能把 MCP tool 导进来，接下来通常会看三篇：
 
+- [高阶实战：自动问题分析、自动需求开发与自动部署](../12-advanced-automation/README.md)
 - [Mount 设计](../08-mounts/README.md)
 - [执行方式](../09-execution/README.md)

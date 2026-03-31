@@ -197,6 +197,18 @@ class ProgressSteps:
         return False
 
 
+class ElapsedStatusHandle:
+    def __init__(self, initial_message: str) -> None:
+        self._message = initial_message
+
+    def update(self, message: str) -> None:
+        self._message = message
+
+    @property
+    def message(self) -> str:
+        return self._message
+
+
 @contextmanager
 def status(output_format: str, message: str):
     if output_format == "json" or not bool(getattr(sys.stderr, "isatty", lambda: False)()):
@@ -215,14 +227,15 @@ def status(output_format: str, message: str):
 
 @contextmanager
 def elapsed_status(output_format: str, message: str, *, interval: float = 0.1):
+    handle = ElapsedStatusHandle(message)
     if output_format == "json" or not bool(getattr(sys.stderr, "isatty", lambda: False)()):
-        yield
+        yield handle
         return
     try:
         from rich.console import Console
     except ModuleNotFoundError:
         click.echo(message, err=True)
-        yield
+        yield handle
         return
 
     console = Console(stderr=True)
@@ -231,7 +244,7 @@ def elapsed_status(output_format: str, message: str, *, interval: float = 0.1):
 
     def _format_message() -> str:
         elapsed = time.perf_counter() - start_time
-        return f"{message}  elapsed {elapsed:.1f}s"
+        return f"{handle.message}  elapsed {elapsed:.1f}s"
 
     with console.status(_format_message()) as rich_status:
         def _ticker() -> None:
@@ -241,7 +254,7 @@ def elapsed_status(output_format: str, message: str, *, interval: float = 0.1):
         worker = threading.Thread(target=_ticker, name="cts-elapsed-status", daemon=True)
         worker.start()
         try:
-            yield
+            yield handle
         finally:
             stop_event.set()
             worker.join(timeout=max(interval * 2, 0.2))
