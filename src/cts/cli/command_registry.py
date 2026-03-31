@@ -135,7 +135,7 @@ def should_load_drift_governance(command_path: tuple[str, ...], *, help_requeste
     if help_requested:
         return False
     scopes = resolve_command_scopes(command_path)
-    return not scopes.issubset(frozenset({"config", "imports", "completion"}))
+    return bool(scopes.intersection(frozenset({"catalog", "discovery", "mount_execution", "surfaces"})))
 
 
 def _matches_prefix(command_path: tuple[str, ...], prefixes: tuple[tuple[str, ...], ...]) -> bool:

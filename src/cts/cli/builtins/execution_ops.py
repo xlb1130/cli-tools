@@ -58,7 +58,14 @@ def register_execution_ops_commands(
             "non_interactive": non_interactive,
             "output_format": output_format,
         }
-        run_mount_command(app, mount, kwargs, mode="invoke")
+        start_perf = click.get_current_context().meta.get("cts_app_load_started_at")
+        run_mount_command(
+            app,
+            mount,
+            kwargs,
+            mode="invoke",
+            start_perf=start_perf,
+        )
 
     @manage_group.command(
         help="Explain how a mounted capability would execute without running it.",
@@ -87,7 +94,14 @@ def register_execution_ops_commands(
             "dry_run": False,
             "non_interactive": True,
         }
-        run_mount_command(app, mount, kwargs, mode="explain")
+        start_perf = click.get_current_context().meta.get("cts_app_load_started_at")
+        run_mount_command(
+            app,
+            mount,
+            kwargs,
+            mode="explain",
+            start_perf=start_perf,
+        )
 
     @manage_group.command(
         help="Run discovery sync for one source or the whole registry.",

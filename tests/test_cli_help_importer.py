@@ -4,8 +4,11 @@ import time
 from pathlib import Path
 
 import pytest
+import click
 from click.testing import CliRunner
 
+import cts.cli.execution_runtime as execution_runtime
+from cts.cli.command_registry import should_load_drift_governance
 import cts.cli.root as root_module
 from cts.app import build_app
 from cts.cli.root import main
@@ -534,6 +537,143 @@ def test_elapsed_status_updates_message_with_elapsed_time(monkeypatch):
 
     assert any("Invoking demo" in item for item in updates)
     assert any("elapsed" in item for item in updates)
+
+
+def test_dynamic_callback_starts_elapsed_status_before_loading_app():
+    events = []
+    mount = type(
+        "Mount",
+        (),
+        {
+            "mount_id": "demo.greet",
+            "source_name": "demo_cli",
+            "operation": type("Operation", (), {"id": "greet"})(),
+        },
+    )()
+    app = type(
+        "App",
+        (),
+        {
+            "catalog": type("Catalog", (), {"find_by_id": lambda self, mount_id: None})(),
+        },
+    )()
+
+    class RecordingStatus:
+        def __enter__(self):
+            events.append("status_enter")
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            events.append("status_exit")
+            return False
+
+    command = click.Command(
+        "demo",
+        params=[click.Option(["--output-format"], default="text")],
+        callback=execution_runtime.build_dynamic_callback(
+            mount,
+            get_app=lambda ctx, mode="invoke": events.append("get_app") or app,
+            fail=lambda ctx, exc, stage, output_format: (_ for _ in ()).throw(exc),
+            error_output_format=lambda ctx, output_format: output_format or "text",
+            elapsed_status=lambda output_format, label: RecordingStatus(),
+            run_mount_command=lambda app, runtime_mount, kwargs, mode, **extra: events.append(
+                ("run_mount_command", mode, extra.get("show_elapsed_status"))
+            ),
+        ),
+    )
+
+    result = CliRunner().invoke(command, ["--output-format", "text"])
+
+    assert result.exit_code == 0
+    assert events == [
+        "status_enter",
+        "get_app",
+        ("run_mount_command", "invoke", False),
+        "status_exit",
+    ]
+
+
+def test_pass_app_starts_elapsed_status_before_loading_app(monkeypatch):
+    events = []
+
+    class RecordingStatus:
+        def __enter__(self):
+            events.append("status_enter")
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            events.append("status_exit")
+            return False
+
+    monkeypatch.setattr(root_module, "_elapsed_status", lambda output_format, label: RecordingStatus())
+    monkeypatch.setattr(root_module, "_get_app", lambda ctx, mode="full": events.append(("get_app", mode)) or object())
+
+    @click.command()
+    @click.option("--output-format", default="text")
+    @root_module.pass_app
+    def demo(app, output_format):
+        events.append("command_body")
+
+    result = CliRunner().invoke(demo, ["--output-format", "text"])
+
+    assert result.exit_code == 0
+    assert events == [
+        "status_enter",
+        ("get_app", "full"),
+        "status_exit",
+        "command_body",
+    ]
+
+
+def test_run_mount_command_can_reuse_outer_elapsed_timer(monkeypatch):
+    seen = {}
+
+    monkeypatch.setattr(execution_runtime.time, "perf_counter", lambda: 103.2)
+    monkeypatch.setattr(execution_runtime, "utc_now_iso", lambda: "2026-03-31T00:00:00Z")
+    monkeypatch.setattr(execution_runtime, "extract_request_args", lambda kwargs: ({}, {}))
+    monkeypatch.setattr(execution_runtime, "invoke_mount", lambda app, mount, payload, runtime: {"ok": True})
+    monkeypatch.setattr(execution_runtime, "render_payload", lambda payload, output_format: payload)
+    monkeypatch.setattr(execution_runtime, "click", type("FakeClick", (), {"echo": lambda message: None, "get_current_context": lambda: None}))
+    monkeypatch.setattr(execution_runtime, "emit_app_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(execution_runtime, "emit_audit_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(execution_runtime, "record_run", lambda app, payload: seen.setdefault("run", payload))
+    monkeypatch.setattr(execution_runtime, "summarize_result", lambda result: result)
+
+    app = type("App", (), {"active_profile": None})()
+    mount = type(
+        "Mount",
+        (),
+        {
+            "mount_id": "demo.greet",
+            "stable_name": "demo.greet",
+            "source_name": "demo_cli",
+            "provider_type": "cli",
+            "summary": "Demo greet",
+            "command_path": ["demo", "greet"],
+            "operation": type("Operation", (), {"id": "greet", "risk": "read"})(),
+        },
+    )()
+    setattr(app, "ensure_mount_execution_allowed", lambda *args, **kwargs: None)
+
+    execution_runtime.run_mount_command(
+        app,
+        mount,
+        {"output_format": "text"},
+        "invoke",
+        fail=lambda *args, **kwargs: None,
+        elapsed_status=lambda output_format, label: (_ for _ in ()).throw(AssertionError("elapsed_status should be skipped")),
+        start_perf=100.0,
+        show_elapsed_status=False,
+    )
+
+    assert seen["run"]["metadata"]["duration_ms"] == 3200
+
+
+def test_should_load_drift_governance_skips_auth_and_runs_commands():
+    assert should_load_drift_governance(("manage", "auth", "list"), help_requested=False) is False
+    assert should_load_drift_governance(("manage", "runs", "list"), help_requested=False) is False
+    assert should_load_drift_governance(("manage", "logs", "recent"), help_requested=False) is False
+    assert should_load_drift_governance(("manage", "source", "list"), help_requested=False) is True
 
 
 def test_progress_steps_update_current_emits_text_progress(monkeypatch):

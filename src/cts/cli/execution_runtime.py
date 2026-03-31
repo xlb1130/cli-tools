@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from contextlib import nullcontext
 from typing import Any, Callable, Dict
 
 import click
@@ -17,17 +18,29 @@ def build_dynamic_callback(
     get_app: Callable,
     fail: Callable,
     error_output_format: Callable,
+    elapsed_status: Callable,
     run_mount_command: Callable,
 ):
     @click.pass_context
     def callback(ctx, **kwargs):
+        output_format = error_output_format(ctx, kwargs.get("output_format"))
+        status_label = f"Invoke {mount.mount_id}"
+        start_perf = time.perf_counter()
         try:
-            app = get_app(ctx, mode="invoke")
+            with elapsed_status(output_format, status_label):
+                app = get_app(ctx, mode="invoke")
+                runtime_mount = app.catalog.find_by_id(mount.mount_id) or mount
+                run_mount_command(
+                    app,
+                    runtime_mount,
+                    kwargs,
+                    mode="invoke",
+                    start_perf=start_perf,
+                    show_elapsed_status=False,
+                )
         except Exception as exc:
-            fail(ctx, exc, "config_load", error_output_format(ctx, kwargs.get("output_format")))
+            fail(ctx, exc, "config_load", output_format)
             return
-        runtime_mount = app.catalog.find_by_id(mount.mount_id) or mount
-        run_mount_command(app, runtime_mount, kwargs, mode="invoke")
 
     return callback
 
@@ -40,12 +53,15 @@ def run_mount_command(
     *,
     fail: Callable,
     elapsed_status: Callable,
+    start_perf: float | None = None,
+    show_elapsed_status: bool = True,
 ) -> None:
     output_format = kwargs.get("output_format") or getattr(app, "global_output", "text")
     run_id = str(uuid.uuid4())
     trace_id = str(uuid.uuid4())
     started_at = utc_now_iso()
-    start_perf = time.perf_counter()
+    if start_perf is None:
+        start_perf = time.perf_counter()
 
     try:
         payload, runtime = extract_request_args(kwargs)
@@ -63,7 +79,8 @@ def run_mount_command(
             data={"args": payload, "provider_type": mount.provider_type},
         )
         status_label = f"{mode.title()} {mount.mount_id}"
-        with elapsed_status(output_format, status_label):
+        execution_context = elapsed_status(output_format, status_label) if show_elapsed_status else nullcontext()
+        with execution_context:
             if mode == "explain":
                 result = explain_mount(app, mount, payload, runtime)
             else:

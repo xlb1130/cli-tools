@@ -76,6 +76,14 @@ def _build_static_help_catalog(loaded):
     return build_static_help_catalog(loaded)
 
 
+def _command_loading_label(ctx: click.Context, mode: str) -> str:
+    command_path = ctx.command_path or "cts"
+    action = "Loading"
+    if mode == "invoke":
+        action = "Preparing"
+    return f"{action} {command_path}"
+
+
 def pass_app(func):
     return _pass_app_mode("full", func)
 
@@ -83,10 +91,14 @@ def pass_app(func):
 def _pass_app_mode(mode: str, func):
     @click.pass_context
     def wrapper(ctx: click.Context, *args, **kwargs):
+        output_format = _error_output_format(ctx, kwargs.get("output_format"))
+        start_perf = time.perf_counter()
+        ctx.meta["cts_app_load_started_at"] = start_perf
         try:
-            app = _get_app(ctx, mode=mode)
+            with _elapsed_status(output_format, _command_loading_label(ctx, mode)):
+                app = _get_app(ctx, mode=mode)
         except Exception as exc:
-            _fail(ctx, exc, "config_load", _error_output_format(ctx, kwargs.get("output_format")))
+            _fail(ctx, exc, "config_load", output_format)
             return None
         return ctx.invoke(func, app, *args, **kwargs)
 
@@ -278,7 +290,7 @@ register_builtin_commands(
         "build_param_payload": lambda **kwargs: _build_param_payload(**kwargs),
         "find_alias_payload": lambda items, from_tokens: _find_alias_payload(items, from_tokens),
         "path_to_str": lambda path: _path_to_str(path),
-        "run_mount_command": lambda app, mount, kwargs, mode: _run_mount_command(app, mount, kwargs, mode),
+        "run_mount_command": lambda app, mount, kwargs, mode, **extra: _run_mount_command(app, mount, kwargs, mode, **extra),
         "create_http_server": lambda *args, **kwargs: create_http_server(*args, **kwargs),
         "default_ui_dist_dir": lambda: default_ui_dist_dir(),
     },
@@ -291,11 +303,12 @@ def _dynamic_callback(mount):
         get_app=lambda ctx, mode="full": _get_app(ctx, mode=mode),
         fail=lambda ctx, exc, stage, output_format: _fail(ctx, exc, stage, output_format),
         error_output_format=lambda ctx, output_format: _error_output_format(ctx, output_format),
-        run_mount_command=lambda app, runtime_mount, kwargs, mode: _run_mount_command(app, runtime_mount, kwargs, mode),
+        elapsed_status=lambda output_format, label: _elapsed_status(output_format, label),
+        run_mount_command=lambda app, runtime_mount, kwargs, mode, **extra: _run_mount_command(app, runtime_mount, kwargs, mode, **extra),
     )
 
 
-def _run_mount_command(app: CTSApp, mount, kwargs: Dict[str, Any], mode: str) -> None:
+def _run_mount_command(app: CTSApp, mount, kwargs: Dict[str, Any], mode: str, **extra: Any) -> None:
     run_mount_command(
         app,
         mount,
@@ -303,6 +316,7 @@ def _run_mount_command(app: CTSApp, mount, kwargs: Dict[str, Any], mode: str) ->
         mode,
         fail=lambda ctx, exc, stage, output_format, **extra: _fail(ctx, exc, stage, output_format, **extra),
         elapsed_status=lambda output_format, label: _elapsed_status(output_format, label),
+        **extra,
     )
 
 
