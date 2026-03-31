@@ -111,6 +111,7 @@ class ProgressSteps:
         self.failed_step: Optional[str] = None
         self.failed_step_duration: Optional[float] = None
         self.step_durations: List[tuple[str, float]] = []
+        self._last_rendered_width = 0
 
     def __enter__(self):
         return self
@@ -128,8 +129,25 @@ class ProgressSteps:
         self.current_step = None
         self.current_step_started_at = None
 
+    def _clear_transient_line(self) -> None:
+        if not self.enabled or self._last_rendered_width <= 0:
+            return
+        sys.stderr.write("\r" + (" " * self._last_rendered_width) + "\r")
+        sys.stderr.flush()
+        self._last_rendered_width = 0
+
     def _emit_status_line(self, message: str) -> None:
+        self._clear_transient_line()
         click.echo(message, err=True)
+
+    def _render_current_step(self, label: str) -> None:
+        if not self.enabled:
+            return
+        message = f"[{self.index}/{len(self.steps)}] {label}"
+        padding = max(self._last_rendered_width - len(message), 0)
+        sys.stderr.write("\r" + message + (" " * padding))
+        sys.stderr.flush()
+        self._last_rendered_width = len(message)
 
     def _emit_failure(self) -> None:
         step_label = self.failed_step or self.current_step or (self.steps[self.index] if self.index < len(self.steps) else self.title)
@@ -155,13 +173,13 @@ class ProgressSteps:
         description = label or (self.steps[self.index - 1] if self.index - 1 < len(self.steps) else self.title)
         self.current_step = description
         self.current_step_started_at = time.perf_counter()
-        click.echo(f"[{self.index}/{len(self.steps)}] {description}", err=True)
+        self._render_current_step(description)
 
     def update_current(self, label: str) -> None:
         if not self.enabled or self.current_step is None:
             return
         self.current_step = label
-        click.echo(f"[{self.index}/{len(self.steps)}] {label}", err=True)
+        self._render_current_step(label)
 
     def __exit__(self, exc_type, exc, tb):
         failed_duration = None

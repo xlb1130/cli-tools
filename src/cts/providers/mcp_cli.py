@@ -111,6 +111,14 @@ class MCPCLIProvider:
                 ImportPostAction(action="create_mounts_from_source_operations", payload={"source_name": source_name, "under": under_values or [source_name]}),
             ],
             preview=preview,
+            runtime_data={
+                "progress_labels": {
+                    "files_to_write": "Writing server config",
+                    "compile": "Compiling source config",
+                    "sync_source": "Discovering tools",
+                    "create_mounts_from_source_operations": "Creating mounts",
+                }
+            },
         )
 
     def discover(self, source_name: str, source_config: SourceConfig, app: "CTSApp") -> List[OperationDescriptor]:

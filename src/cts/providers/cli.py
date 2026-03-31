@@ -213,6 +213,7 @@ class CLIProvider:
                 under_values=under_values,
                 prefix=values.get("prefix"),
                 save_manifest_path=save_manifest_path,
+                progress_callback=values.get("__progress_callback__"),
             )
             return ImportPlan(
                 provider_type=self.provider_type,
@@ -545,6 +546,7 @@ class ShellProvider(CLIProvider):
             source_patch=source_patch,
             mount_patches=[mount_patch],
             preview=preview,
+            runtime_data={"progress_labels": {"compile": "Applying config"}},
         )
 
 

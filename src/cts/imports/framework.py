@@ -31,6 +31,7 @@ def execute_import_plan(
     state: Any,
     apply_update: Any,
     prepare_edit_session: Any,
+    progress: Any = None,
 ) -> Dict[str, Any]:
     strategy = str(plan.runtime_data.get("apply_strategy") or "").strip()
     if strategy in {"cli_single", "cli_tree"}:
@@ -42,6 +43,7 @@ def execute_import_plan(
             state=state,
             apply_update=apply_update,
             prepare_edit_session=prepare_edit_session,
+            progress=progress,
         )
     return _execute_generic_plan(
         plan,
@@ -50,6 +52,7 @@ def execute_import_plan(
         state=state,
         apply_update=apply_update,
         prepare_edit_session=prepare_edit_session,
+        progress=progress,
     )
 
 
@@ -62,11 +65,14 @@ def _execute_cli_legacy_plan(
     state: Any,
     apply_update: Any,
     prepare_edit_session: Any,
+    progress: Any = None,
 ) -> Dict[str, Any]:
     legacy_plan = dict(plan.runtime_data.get("legacy_plan") or {})
     baseline_conflicts = conflict_signatures(app.catalog.conflicts)
     if strategy == "cli_tree":
         manifest_write = dict(legacy_plan["manifest_write"])
+        if progress is not None:
+            progress.advance("Writing manifest")
         write_manifest_operations(
             Path(manifest_write["resolved_path"]),
             list(manifest_write["operations"]),
@@ -82,6 +88,8 @@ def _execute_cli_legacy_plan(
                 config_edit_error=ConfigEditError,
             )
 
+        if progress is not None:
+            progress.advance("Compiling config")
         updated, _compiled_app = apply_update(
             session,
             mutator,
@@ -103,6 +111,8 @@ def _execute_cli_legacy_plan(
 
     if legacy_plan.get("manifest_write"):
         manifest_write = dict(legacy_plan["manifest_write"])
+        if progress is not None:
+            progress.advance("Writing manifest")
         merge_operation_into_manifest(
             Path(manifest_write["resolved_path"]),
             dict(manifest_write["operation"]),
@@ -118,6 +128,8 @@ def _execute_cli_legacy_plan(
             config_edit_error=ConfigEditError,
         )
 
+    if progress is not None:
+        progress.advance("Compiling config")
     updated, compiled_app = apply_update(
         session,
         mutator,
@@ -149,8 +161,12 @@ def _execute_generic_plan(
     state: Any,
     apply_update: Any,
     prepare_edit_session: Any,
+    progress: Any = None,
 ) -> Dict[str, Any]:
+    progress_labels = dict(plan.runtime_data.get("progress_labels") or {})
     for file_write in plan.files_to_write:
+        if progress is not None:
+            progress.advance(progress_labels.get("files_to_write") or "Writing files")
         _write_file(file_write)
 
     baseline_conflicts = conflict_signatures(app.catalog.conflicts)
@@ -161,6 +177,8 @@ def _execute_generic_plan(
         if plan.mount_patches:
             _upsert_mount_payloads(payload, plan.mount_patches)
 
+    if progress is not None:
+        progress.advance(progress_labels.get("compile") or "Compiling config")
     updated, compiled_app = apply_update(
         session,
         mutator,
@@ -172,7 +190,9 @@ def _execute_generic_plan(
     post_results = []
     if compiled_app is not None:
         for action in plan.post_compile_actions:
-            post_results.append(_execute_post_action(action, compiled_app))
+            if progress is not None:
+                progress.advance(progress_labels.get(action.action) or _default_post_action_label(action.action))
+            post_results.append(_execute_post_action(action, compiled_app, progress=progress))
 
     if post_results:
         mount_entries = []
@@ -254,17 +274,25 @@ def _write_file(file_write: Any) -> None:
         handle.write(text)
 
 
-def _execute_post_action(action: ImportPostAction, app: Any) -> Dict[str, Any]:
+def _execute_post_action(action: ImportPostAction, app: Any, *, progress: Any = None) -> Dict[str, Any]:
     if action.action == "sync_source":
         source_name = str(action.payload.get("source_name") or "")
+        if progress is not None:
+            progress.update_current(f"Discovering tools (syncing source '{source_name}')")
         result = app.sync(source_name)
+        if progress is not None:
+            discovered_count = sum(int(item.get("operation_count", 0) or 0) for item in result.get("items", []))
+            progress.update_current(f"Discovering tools ({discovered_count} discovered)")
         return {"action": action.action, **result}
     if action.action == "create_mounts_from_source_operations":
         source_name = str(action.payload.get("source_name") or "")
         under = list(action.payload.get("under") or [source_name])
         mounts = []
         source_operations = app.source_operations.get(source_name, {})
-        for operation_id, operation in source_operations.items():
+        total = len(source_operations)
+        for index, (operation_id, operation) in enumerate(source_operations.items(), start=1):
+            if progress is not None:
+                progress.update_current(f"Creating mounts ({index}/{total}: {operation_id})")
             existing_mount = app.catalog.find_by_source_and_operation(source_name, operation_id)
             if existing_mount is not None:
                 mount_id = existing_mount.mount_id
@@ -364,6 +392,14 @@ def _deep_merge(left: Any, right: Any) -> Any:
                 result[key] = value
         return result
     return right
+
+
+def _default_post_action_label(action: str) -> str:
+    mapping = {
+        "sync_source": "Syncing source",
+        "create_mounts_from_source_operations": "Creating mounts",
+    }
+    return mapping.get(action, action.replace("_", " ").capitalize())
 
 
 def _mcp_apply_summary(post_results: list[Dict[str, Any]]) -> Dict[str, Any]:

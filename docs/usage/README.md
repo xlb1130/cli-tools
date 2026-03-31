@@ -60,10 +60,19 @@ cts import wizard <provider-type>
 
 ### 第 5 步：最后再做扩展开发
 
-10. [Plugin](10-plugins/README.md)
-11. [Hook](11-hooks/README.md)
+10. [Plugin](10-plugins/README.md) - 开发自定义 Provider
+11. [Hook](11-hooks/README.md) - 在生命周期节点插入自定义逻辑
 
 只有在内置 provider 不够用，或者你要扩 southbound / northbound 行为时，再进入这两篇。
+
+**Plugin** 让你：
+- 注册新的 provider type
+- 封装公司内部或项目专属的集成逻辑
+
+**Hook** 让你：
+- 在执行前改写参数
+- 在结果上追加处理
+- 加审计、治理等横切逻辑
 
 ## 按场景选文档
 

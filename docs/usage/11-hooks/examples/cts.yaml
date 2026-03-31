@@ -3,23 +3,34 @@ version: 1
 plugins:
   demo:
     path: ./demo_plugin.py
+    enabled: true
     config:
       suffix: "!"
+      help_note: "Plugin hook active"
 
 hooks:
+  # 在 explain 和 invoke 前给 text 参数追加后缀
   - event: explain.before
     plugin: demo
     handler: suffix_text
+
   - event: invoke.before
     plugin: demo
     handler: suffix_text
+
+  # 在 invoke 结果上补一个标记
   - event: invoke.after
     plugin: demo
     handler: mark_result
 
+  # 给帮助输出追加说明
+  - event: help.after
+    plugin: demo
+    handler: append_help_note
+
 sources:
   plugin_source:
-    type: plugin_echo
+    type: hook_echo
     operations:
       echo:
         title: Plugin Echo
@@ -29,6 +40,7 @@ sources:
           properties:
             text:
               type: string
+              description: Text to echo
           required: [text]
 
 mounts:

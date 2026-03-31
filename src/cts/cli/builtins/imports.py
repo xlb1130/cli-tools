@@ -63,6 +63,8 @@ def register_import_commands(
                 session=session,
                 apply_update=apply_update,
                 prepare_edit_session=prepare_edit_session,
+                progress_steps=progress_steps,
+                output_format=output_format,
             )
             click.echo(render_payload(payload, output_format))
         except Exception as exc:
@@ -71,6 +73,7 @@ def register_import_commands(
     _attach_dynamic_provider_commands(
         import_group,
         get_state=get_state,
+        progress_steps=progress_steps,
         prepare_edit_session=prepare_edit_session,
         app_factory=app_factory,
         apply_update=apply_update,
@@ -83,6 +86,7 @@ def _attach_dynamic_provider_commands(
     import_group: click.Group,
     *,
     get_state: Callable,
+    progress_steps: Callable,
     prepare_edit_session: Callable,
     app_factory: Callable,
     apply_update: Callable,
@@ -118,6 +122,7 @@ def _attach_dynamic_provider_commands(
             provider=provider,
             app=app,
             get_state=get_state,
+            progress_steps=progress_steps,
             prepare_edit_session=prepare_edit_session,
             app_factory=app_factory,
             apply_update=apply_update,
@@ -135,6 +140,7 @@ def _build_provider_import_command(
     provider: Any,
     app: Any,
     get_state: Callable,
+    progress_steps: Callable,
     prepare_edit_session: Callable,
     app_factory: Callable,
     apply_update: Callable,
@@ -180,6 +186,8 @@ def _build_provider_import_command(
                 session=session,
                 apply_update=apply_update,
                 prepare_edit_session=prepare_edit_session,
+                progress_steps=progress_steps,
+                output_format=output_format,
             )
             click.echo(render_payload(payload, output_format))
         except Exception as exc:
@@ -325,19 +333,107 @@ def _execute_import_request(
     session: Any,
     apply_update: Callable,
     prepare_edit_session: Callable,
+    progress_steps: Callable,
+    output_format: str,
 ) -> Dict[str, Any]:
     request.values.setdefault("__target_dir__", str(session.target_path.parent))
-    plan = build_provider_import_plan(provider, request, app)
-    if not request.apply:
-        return dict(plan.preview)
-    return execute_import_plan(
-        plan,
-        session=session,
-        app=app,
-        state=state,
-        apply_update=apply_update,
-        prepare_edit_session=prepare_edit_session,
-    )
+    title, steps = _import_progress_definition(request)
+    with progress_steps(output_format, title, steps) as progress:
+        plan_progress = _build_plan_progress(progress, request)
+        if plan_progress.get("prepare"):
+            progress.advance(plan_progress["prepare"])
+        request.values["__progress_callback__"] = plan_progress.get("callback")
+        plan = build_provider_import_plan(provider, request, app)
+        request.values.pop("__progress_callback__", None)
+        if not request.apply:
+            return dict(plan.preview)
+        return execute_import_plan(
+            plan,
+            session=session,
+            app=app,
+            state=state,
+            apply_update=apply_update,
+            prepare_edit_session=prepare_edit_session,
+            progress=progress if steps else None,
+        )
+
+
+def _import_progress_definition(request: ImportRequest) -> tuple[str, list[str]]:
+    source_name = request.source_name or str(request.values.get("source_name") or "")
+    provider_type = request.provider_type
+    if provider_type == "cli" and bool(request.values.get("import_all")):
+        return (
+            f"Importing CLI tree '{source_name}'",
+            [
+                "Inspect root command",
+                "Discover subcommands",
+                "Import leaf operations",
+                "Prepare mounts",
+                "Write manifest",
+                "Compile config",
+            ] if request.apply else [
+                "Inspect root command",
+                "Discover subcommands",
+                "Import leaf operations",
+                "Prepare mounts",
+            ],
+        )
+    if provider_type == "cli":
+        has_manifest = bool(request.values.get("save_manifest_path"))
+        steps = ["Prepare import plan"]
+        if request.apply:
+            if has_manifest:
+                steps.append("Write manifest")
+            steps.append("Compile config")
+        return (f"Importing CLI command '{source_name}'", steps)
+    if provider_type == "shell":
+        return (
+            f"Importing shell source '{source_name}'",
+            ["Prepare import plan", "Applying config"] if request.apply else ["Prepare import plan"],
+        )
+    if provider_type == "mcp":
+        return (
+            f"Importing MCP source '{source_name}'",
+            ["Prepare import plan", "Writing server config", "Compiling source config", "Discovering tools", "Creating mounts"] if request.apply else ["Prepare import plan"],
+        )
+    title = f"Importing {provider_type} source '{source_name}'"
+    steps = ["Prepare import plan"]
+    if request.apply:
+        steps.extend(["Compiling config", "Syncing source", "Creating mounts"])
+    return title, steps
+
+
+def _build_plan_progress(progress: Any, request: ImportRequest) -> Dict[str, Any]:
+    if request.provider_type == "cli" and bool(request.values.get("import_all")):
+        def callback(stage: str, details: Dict[str, Any]) -> None:
+            if stage == "inspect_root":
+                progress.advance("Inspecting root command")
+                return
+            if stage == "discover_subcommands":
+                if progress.index < 2:
+                    progress.advance("Discovering subcommands")
+                progress.update_current(
+                    "Discovering subcommands"
+                    f" ({details.get('visited', 0)} visited, {details.get('queued', 0)} queued, {details.get('leaves', 0)} leaves)"
+                )
+                return
+            if stage == "import_leaf_operations":
+                if progress.index < 3:
+                    progress.advance("Importing leaf operations")
+                progress.update_current(
+                    "Importing leaf operations"
+                    f" ({details.get('current', 0)}/{details.get('total', 0)}: {details.get('operation_id', '-')})"
+                )
+                return
+            if stage == "prepare_mounts":
+                if progress.index < 4:
+                    progress.advance("Preparing mounts")
+                progress.update_current(
+                    "Preparing mounts"
+                    f" ({details.get('current', 0)}/{details.get('total', 0)}: {details.get('operation_id', '-')})"
+                )
+        return {"prepare": None, "callback": callback}
+    return {"prepare": "Preparing import plan", "callback": None}
 
 
 def _dash(value: str) -> str:

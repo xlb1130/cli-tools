@@ -103,6 +103,7 @@ class HTTPProvider:
                 "source_config": source_patch,
                 "mount": mount_patch,
             },
+            runtime_data={"progress_labels": {"compile": "Applying config"}},
         )
 
     def discover(self, source_name: str, source_config: SourceConfig, app: "CTSApp") -> List[OperationDescriptor]:

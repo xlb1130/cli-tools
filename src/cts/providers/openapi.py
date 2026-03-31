@@ -96,6 +96,13 @@ class OpenAPIProvider(HTTPProvider):
                 "source_name": source_name,
                 "source_config": source_patch,
             },
+            runtime_data={
+                "progress_labels": {
+                    "compile": "Compiling config",
+                    "sync_source": "Discovering operations",
+                    "create_mounts_from_source_operations": "Creating mounts",
+                }
+            },
         )
 
     def discover(self, source_name: str, source_config: SourceConfig, app: "CTSApp") -> List[OperationDescriptor]:

@@ -394,8 +394,30 @@ def test_import_mcp_apply_surfaces_discovery_error(tmp_path: Path, monkeypatch):
     assert payload["discovery_report_path"]
 
 
-def test_import_mcp_apply_creates_mounts_for_each_discovered_operation(tmp_path: Path, monkeypatch):
+def test_import_mcp_apply_updates_progress_for_each_mount(tmp_path: Path, monkeypatch):
     config_path = tmp_path / "cts.yaml"
+    captured = {}
+
+    class RecordingProgress:
+        def __init__(self, output_format, title, steps):
+            captured["title"] = title
+            captured["steps"] = list(steps)
+            captured["advanced"] = []
+            captured["updated"] = []
+            self.index = 0
+
+        def __enter__(self):
+            return self
+
+        def advance(self, label=None):
+            self.index += 1
+            captured["advanced"].append(label)
+
+        def update_current(self, label):
+            captured["updated"].append(label)
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
 
     def fake_bridge(source_config, app, command, primitive_type=None, target=None, args=None, timeout_seconds=None):
         assert command == "list-primitives"
@@ -409,6 +431,7 @@ def test_import_mcp_apply_creates_mounts_for_each_discovered_operation(tmp_path:
             ],
         }
 
+    monkeypatch.setattr(root_module, "_ProgressSteps", RecordingProgress)
     monkeypatch.setattr(mcp_cli, "_run_bridge_command", fake_bridge)
 
     runner = CliRunner()
@@ -431,6 +454,27 @@ def test_import_mcp_apply_creates_mounts_for_each_discovered_operation(tmp_path:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["mounts_created"] == 2
+    assert captured["title"] == "Importing MCP source 'cn12306'"
+    assert captured["steps"] == [
+        "Prepare import plan",
+        "Writing server config",
+        "Compiling source config",
+        "Discovering tools",
+        "Creating mounts",
+    ]
+    assert captured["advanced"] == [
+        "Preparing import plan",
+        "Writing server config",
+        "Compiling source config",
+        "Discovering tools",
+        "Creating mounts",
+    ]
+    assert captured["updated"] == [
+        "Discovering tools (syncing source 'cn12306')",
+        "Discovering tools (2 discovered)",
+        "Creating mounts (1/2: query_train)",
+        "Creating mounts (2/2: refund_ticket)",
+    ]
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     mounts = [item for item in raw["mounts"] if item["source"] == "cn12306"]
     assert {item["id"] for item in mounts} == {"cn12306-query_train", "cn12306-refund_ticket"}

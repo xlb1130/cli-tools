@@ -538,7 +538,11 @@ def test_elapsed_status_updates_message_with_elapsed_time(monkeypatch):
 
 def test_progress_steps_update_current_emits_text_progress(monkeypatch):
     class TTYBuffer:
+        def __init__(self):
+            self.buffer = []
+
         def write(self, data):
+            self.buffer.append(data)
             return len(data)
 
         def flush(self):
@@ -547,17 +551,19 @@ def test_progress_steps_update_current_emits_text_progress(monkeypatch):
         def isatty(self):
             return True
 
-    monkeypatch.setattr(root_module.sys, "stderr", TTYBuffer())
+    stderr = TTYBuffer()
+    monkeypatch.setattr(root_module.sys, "stderr", stderr)
     monkeypatch.setattr(root_module.time, "perf_counter", lambda: 42.0)
-    updates = []
-    monkeypatch.setattr(root_module.click, "echo", lambda message, err=False: updates.append(message))
+    monkeypatch.setattr(root_module.click, "echo", lambda message, err=False: None)
 
     with root_module._ProgressSteps("text", "Demo Progress", ["alpha", "beta"]) as progress:
         progress.advance("Discovering subcommands")
         progress.update_current("Discovering subcommands (3 visited, 2 queued, 1 leaves)")
 
-    assert any("[1/2] Discovering subcommands" in item for item in updates)
-    assert any("3 visited, 2 queued, 1 leaves" in item for item in updates)
+    output = "".join(stderr.buffer)
+    assert "[1/2] Discovering subcommands" in output
+    assert "3 visited, 2 queued, 1 leaves" in output
+    assert "\r" in output
 
 
 CLI_TREE_SCRIPT = """
@@ -629,10 +635,34 @@ def test_import_cli_all_recursively_imports_leaf_commands(tmp_path: Path):
     assert remove_mount.operation.id == "admin_remove_user"
 
 
-def test_import_cli_all_returns_tree_summary(tmp_path: Path):
+def test_import_cli_all_uses_multistep_progress(tmp_path: Path, monkeypatch):
     script_path = tmp_path / "aac_cli.py"
     script_path.write_text(CLI_TREE_SCRIPT, encoding="utf-8")
     config_path = tmp_path / "cts.yaml"
+    captured = {}
+
+    class RecordingProgress:
+        def __init__(self, output_format, title, steps):
+            captured["title"] = title
+            captured["steps"] = list(steps)
+            captured["advanced"] = []
+            captured["updated"] = []
+            self.index = 0
+
+        def __enter__(self):
+            return self
+
+        def advance(self, label=None):
+            self.index += 1
+            captured["advanced"].append(label)
+
+        def update_current(self, label):
+            captured["updated"].append(label)
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(root_module, "_ProgressSteps", RecordingProgress)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -658,6 +688,26 @@ def test_import_cli_all_returns_tree_summary(tmp_path: Path):
     assert payload["operation_count"] == 2
     assert payload["mount_count"] == 2
     assert payload["tree"]["leaf_count"] == 2
+    assert captured["title"] == "Importing CLI tree 'aac'"
+    assert captured["steps"] == [
+        "Inspect root command",
+        "Discover subcommands",
+        "Import leaf operations",
+        "Prepare mounts",
+        "Write manifest",
+        "Compile config",
+    ]
+    assert captured["advanced"][:6] == [
+        "Inspecting root command",
+        "Discovering subcommands",
+        "Importing leaf operations",
+        "Preparing mounts",
+        "Writing manifest",
+        "Compiling config",
+    ]
+    assert any("Discovering subcommands" in item for item in captured["updated"])
+    assert any("Importing leaf operations" in item for item in captured["updated"])
+    assert any("Preparing mounts" in item for item in captured["updated"])
 
 
 def test_import_cli_all_group_help_uses_original_descriptions(tmp_path: Path):
