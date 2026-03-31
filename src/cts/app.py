@@ -23,6 +23,7 @@ class Catalog:
         self.mounts: List[MountRecord] = []
         self._mounts_by_id: Dict[str, MountRecord] = {}
         self._path_index: Dict[Tuple[str, ...], MountRecord] = {}
+        self._group_help: Dict[Tuple[str, ...], Dict[str, str]] = {}
         self._conflicts: List[Dict[str, Any]] = []
 
     @property
@@ -124,6 +125,8 @@ class Catalog:
         for path in self._path_index:
             if len(path) > len(prefix_tuple) and path[: len(prefix_tuple)] == prefix_tuple:
                 return True
+        if prefix_tuple in self._group_help:
+            return True
         return False
 
     def child_tokens(self, prefix: Iterable[str]) -> List[str]:
@@ -137,7 +140,21 @@ class Catalog:
         return sorted(tokens)
 
     def group_summary(self, prefix: Iterable[str]) -> str:
-        return "Dynamic command group for " + " ".join(prefix)
+        help_payload = self._group_help.get(tuple(prefix)) or {}
+        return help_payload.get("summary") or "Dynamic command group for " + " ".join(prefix)
+
+    def group_description(self, prefix: Iterable[str]) -> str:
+        help_payload = self._group_help.get(tuple(prefix)) or {}
+        return help_payload.get("description") or self.group_summary(prefix)
+
+    def add_group_help(self, prefix: Iterable[str], *, summary: Optional[str], description: Optional[str]) -> None:
+        prefix_tuple = tuple(prefix)
+        if not prefix_tuple:
+            return
+        self._group_help[prefix_tuple] = {
+            "summary": summary or " ".join(prefix_tuple),
+            "description": description or summary or "Dynamic command group for " + " ".join(prefix_tuple),
+        }
 
     def to_catalog(self) -> Dict[str, Any]:
         return {
@@ -154,6 +171,8 @@ class CTSApp:
         explicit_config_path: Optional[str] = None,
         requested_profile: Optional[str] = None,
         compile_mode: str = "full",
+        target_source_names: Optional[List[str]] = None,
+        load_drift_governance: bool = True,
     ) -> None:
         self.loaded_config = loaded_config
         self.config = loaded_config.config
@@ -161,12 +180,15 @@ class CTSApp:
         self.explicit_config_path = explicit_config_path
         self.requested_profile = requested_profile
         self.compile_mode = compile_mode
+        self.target_source_names = set(target_source_names or [])
+        self.load_drift_governance = load_drift_governance
         self.plugin_manager = PluginManager(loaded_config)
         self.provider_registry = ProviderRegistry()
         self.plugin_manager.register_providers(self.provider_registry)
         self.discovery_store = DiscoveryStore(self)
-        self.secret_manager = SecretManager(self)
-        self.auth_manager = AuthManager(self)
+        self._secret_manager: Optional[SecretManager] = None
+        self._auth_manager: Optional[AuthManager] = None
+        self._drift_governance_loaded = not load_drift_governance
         self.sync_baselines: Dict[str, Optional[Dict[str, Any]]] = {}
         self.latest_drift_report: Optional[Dict[str, Any]] = None
         self.source_drift_state: Dict[str, Dict[str, Any]] = {}
@@ -178,7 +200,6 @@ class CTSApp:
         self.discovery_state: Dict[str, Dict[str, Any]] = {}
         self.catalog = Catalog()
         self._compile()
-        self._load_drift_governance()
         self.dispatch_hooks("app.init", {"app": self})
         emit_app_event(
             self,
@@ -201,6 +222,18 @@ class CTSApp:
     @property
     def config_paths(self) -> List[Path]:
         return self.loaded_config.paths
+
+    @property
+    def secret_manager(self) -> SecretManager:
+        if self._secret_manager is None:
+            self._secret_manager = SecretManager(self)
+        return self._secret_manager
+
+    @property
+    def auth_manager(self) -> AuthManager:
+        if self._auth_manager is None:
+            self._auth_manager = AuthManager(self)
+        return self._auth_manager
 
     @property
     def primary_config_dir(self) -> Path:
@@ -271,6 +304,7 @@ class CTSApp:
         return dict(self.plugin_manager.dispatch(event, payload, app=self))
 
     def get_mount_drift_state(self, mount: MountRecord | str | None) -> Optional[Dict[str, Any]]:
+        self._ensure_drift_governance_loaded()
         if mount is None:
             return None
         mount_id = mount if isinstance(mount, str) else mount.mount_id
@@ -278,10 +312,12 @@ class CTSApp:
         return dict(state) if state else None
 
     def get_source_drift_state(self, source_name: str) -> Optional[Dict[str, Any]]:
+        self._ensure_drift_governance_loaded()
         state = self.source_drift_state.get(source_name)
         return dict(state) if state else None
 
     def get_latest_drift_report(self, source_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        self._ensure_drift_governance_loaded()
         report = dict(self.latest_drift_report) if self.latest_drift_report else None
         if report is None:
             loaded = self.discovery_store.load_latest_sync_report(source_name)
@@ -373,15 +409,20 @@ class CTSApp:
         self._discover_source_operations(mode=discovery_mode)
         self._compile_mounts()
         self._compile_aliases()
+        self._compile_group_help()
 
     def _discover_source_operations(self, *, mode: str = "compile") -> None:
         for source_name, source_config in self.config.sources.items():
             if not source_config.enabled:
                 continue
+            if self.target_source_names and source_name not in self.target_source_names:
+                continue
             self._discover_source(source_name, source_config, mode=mode)
 
     def _compile_mounts(self) -> None:
         for mount in self.config.mounts:
+            if self.target_source_names and mount.source not in self.target_source_names:
+                continue
             source_config = self.config.sources.get(mount.source)
             if not source_config or not source_config.enabled:
                 continue
@@ -418,6 +459,25 @@ class CTSApp:
                 continue
             self.catalog.add_alias(alias_from, alias_to)
 
+    def _compile_group_help(self) -> None:
+        if self.compile_mode == "invoke" and self.target_source_names:
+            return
+        for source_name, source_config in self.config.sources.items():
+            if self.target_source_names and source_name not in self.target_source_names:
+                continue
+            model_extra = getattr(source_config, "model_extra", None) or {}
+            for item in model_extra.get("imported_cli_groups") or []:
+                if not isinstance(item, dict):
+                    continue
+                path = item.get("path") or []
+                if not isinstance(path, list) or not path:
+                    continue
+                self.catalog.add_group_help(
+                    path,
+                    summary=item.get("summary"),
+                    description=item.get("description"),
+                )
+
     def sync(self, source_name: Optional[str] = None) -> Dict[str, Any]:
         items = []
         sources = self.config.sources.items()
@@ -435,6 +495,7 @@ class CTSApp:
         sync_generated_at = utc_now_iso()
         drift_summary = _aggregate_drift(items)
         governance = self._build_drift_governance(items, report_generated_at=sync_generated_at)
+        self._drift_governance_loaded = True
         self.source_drift_state = governance["sources"]
         self.mount_drift_state = governance["mounts"]
 
@@ -533,6 +594,7 @@ class CTSApp:
         }
 
     def _load_drift_governance(self) -> None:
+        self._drift_governance_loaded = True
         report = self.discovery_store.load_latest_sync_report()
         if not report:
             self.latest_drift_report = None
@@ -559,6 +621,14 @@ class CTSApp:
         self.mount_drift_state = computed["mounts"]
         self._annotate_drift_report_path(str(self.discovery_store.latest_sync_report_path()))
         self._apply_drift_reconciliations()
+
+    def _ensure_drift_governance_loaded(self) -> None:
+        if self._drift_governance_loaded:
+            return
+        if not self.load_drift_governance:
+            self._drift_governance_loaded = True
+            return
+        self._load_drift_governance()
 
     def _annotate_drift_report_path(self, report_path: str) -> None:
         if not self.latest_drift_report:
@@ -1331,13 +1401,17 @@ def build_app(
     profile: Optional[str] = None,
     *,
     compile_mode: str = "full",
+    target_source_names: Optional[List[str]] = None,
+    load_drift_governance: bool = True,
 ) -> CTSApp:
     return CTSApp(
-        load_config(config_path),
+        load_config(config_path, target_source_names=target_source_names),
         active_profile=profile,
         explicit_config_path=config_path,
         requested_profile=profile,
         compile_mode=compile_mode,
+        target_source_names=target_source_names,
+        load_drift_governance=load_drift_governance,
     )
 
 

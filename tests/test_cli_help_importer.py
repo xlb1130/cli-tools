@@ -1,7 +1,9 @@
 import json
 import sys
+import time
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 import cts.cli.root as root_module
@@ -301,8 +303,10 @@ mounts:
     assert "greet" in help_result.output
 
 
-CLI_TREE_SCRIPT = """
-import json
+def test_imported_cli_group_help_shows_original_command_description(tmp_path: Path):
+    script_path = tmp_path / "demo_cli.py"
+    script_path.write_text(
+        """
 import click
 
 
@@ -311,9 +315,311 @@ def cli():
     pass
 
 
+@cli.command()
+@click.option("--name", required=True, help="User name")
+def greet(name):
+    \"\"\"Friendly greeting command.\"\"\"
+    click.echo(name)
+
+
+if __name__ == "__main__":
+    cli()
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "demo-manifest.yaml"
+    config_path = tmp_path / "cts.yaml"
+    config_path.write_text(
+        f"""
+version: 1
+sources:
+  demo_cli:
+    type: cli
+    executable: {sys.executable}
+    discovery:
+      manifest: {manifest_path}
+mounts:
+  - id: demo
+    source: demo_cli
+    select:
+      include: ["*"]
+    command:
+      under: [demo]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    import_result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "manage",
+            "source",
+            "import-help",
+            "demo_cli",
+            "greet",
+            str(script_path),
+            "greet",
+            "--format",
+            "json",
+        ],
+    )
+    assert import_result.exit_code == 0
+
+    help_result = runner.invoke(main, ["--config", str(config_path), "demo", "--help"])
+    assert help_result.exit_code == 0
+    assert "Friendly greeting command." in help_result.output
+
+
+def test_source_import_help_uses_multistep_progress(tmp_path: Path, monkeypatch):
+    script_path = tmp_path / "demo_cli.py"
+    script_path.write_text(CLI_SCRIPT, encoding="utf-8")
+    manifest_path = tmp_path / "demo-manifest.yaml"
+    config_path = tmp_path / "cts.yaml"
+    config_path.write_text(
+        f"""
+version: 1
+sources:
+  demo_cli:
+    type: cli
+    executable: {sys.executable}
+    discovery:
+      manifest: {manifest_path}
+mounts: []
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    captured = {}
+
+    class RecordingProgress:
+        def __init__(self, output_format, title, steps):
+            captured["output_format"] = output_format
+            captured["title"] = title
+            captured["steps"] = list(steps)
+            captured["advanced"] = []
+
+        def __enter__(self):
+            return self
+
+        def advance(self, label=None):
+            captured["advanced"].append(label)
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(root_module, "_ProgressSteps", RecordingProgress)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "source",
+            "import-help",
+            "demo_cli",
+            "greet",
+            str(script_path),
+            "greet",
+            "--format",
+            "text",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["title"] == "Importing help for 'demo_cli.greet'"
+    assert captured["steps"] == ["Inspect help output", "Write manifest", "Rebuild catalog"]
+    assert captured["advanced"] == ["Inspecting help output", "Writing manifest", "Rebuilding catalog"]
+
+
+def test_progress_steps_reports_failed_step_and_timing(monkeypatch):
+    class TTYBuffer:
+        def write(self, data):
+            return len(data)
+
+        def flush(self):
+            return None
+
+        def isatty(self):
+            return True
+
+    times = iter([10.0, 10.2, 10.6, 11.1, 11.4, 11.7])
+    monkeypatch.setattr(root_module.time, "perf_counter", lambda: next(times))
+    monkeypatch.setattr(root_module.sys, "stderr", TTYBuffer())
+    messages = []
+    monkeypatch.setattr(root_module.click, "echo", lambda message, err=False: messages.append((message, err)))
+
+    with pytest.raises(RuntimeError):
+        with root_module._ProgressSteps("text", "Demo Progress", ["alpha", "beta"]) as progress:
+            progress.advance("Step Alpha")
+            raise RuntimeError("boom")
+
+    output = "\n".join(message for message, _ in messages)
+    assert "Failed at step 1/2: Step Alpha" in output
+    assert "step 0.40s" in output
+    assert "total 1.10s" in output
+    assert "Failed Demo Progress in 1.40s" in output
+    assert "1. Step Alpha: 0.40s" in output
+
+
+def test_progress_steps_reports_total_and_per_step_on_success(monkeypatch):
+    class TTYBuffer:
+        def write(self, data):
+            return len(data)
+
+        def flush(self):
+            return None
+
+        def isatty(self):
+            return True
+
+    times = iter([20.0, 20.1, 20.5, 20.8, 21.4, 21.8])
+    monkeypatch.setattr(root_module.time, "perf_counter", lambda: next(times))
+    monkeypatch.setattr(root_module.sys, "stderr", TTYBuffer())
+    messages = []
+    monkeypatch.setattr(root_module.click, "echo", lambda message, err=False: messages.append((message, err)))
+
+    with root_module._ProgressSteps("text", "Demo Progress", ["alpha", "beta"]) as progress:
+        progress.advance("Step Alpha")
+        progress.advance("Step Beta")
+
+    output = "\n".join(message for message, _ in messages)
+    assert "Completed Demo Progress in 1.80s" in output
+    assert "1. Step Alpha: 0.40s" in output
+    assert "2. Step Beta: 0.60s" in output
+
+
+def test_elapsed_status_updates_message_with_elapsed_time(monkeypatch):
+    class TTYBuffer:
+        def write(self, data):
+            return len(data)
+
+        def flush(self):
+            return None
+
+        def isatty(self):
+            return True
+
+    updates = []
+
+    class FakeStatus:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def update(self, message):
+            updates.append(message)
+
+    class FakeConsole:
+        def __init__(self, stderr=True):
+            self.stderr = stderr
+
+        def status(self, message):
+            updates.append(message)
+            return FakeStatus()
+
+    monkeypatch.setattr(root_module.sys, "stderr", TTYBuffer())
+    monkeypatch.setitem(sys.modules, "rich.console", type("FakeRichConsoleModule", (), {"Console": FakeConsole}))
+
+    with root_module._elapsed_status("text", "Invoking demo", interval=0.01):
+        time.sleep(0.03)
+
+    assert any("Invoking demo" in item for item in updates)
+    assert any("elapsed" in item for item in updates)
+
+
+def test_progress_steps_rich_description_includes_step_index_and_elapsed(monkeypatch):
+    class TTYBuffer:
+        def write(self, data):
+            return len(data)
+
+        def flush(self):
+            return None
+
+        def isatty(self):
+            return True
+
+    updates = []
+
+    class FakeProgress:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def add_task(self, description, total, completed):
+            updates.append(description)
+            return "task-1"
+
+        def update(self, task_id, **kwargs):
+            if "description" in kwargs:
+                updates.append(kwargs["description"])
+
+    class FakeConsole:
+        def __init__(self, stderr=True):
+            self.stderr = stderr
+
+        def print(self, message):
+            updates.append(str(message))
+
+    class FakeSpinnerColumn:
+        pass
+
+    class FakeBarColumn:
+        pass
+
+    class FakeTextColumn:
+        def __init__(self, template):
+            self.template = template
+
+    monkeypatch.setattr(root_module.sys, "stderr", TTYBuffer())
+    monkeypatch.setattr(root_module.time, "perf_counter", lambda: 42.0)
+
+    import types
+
+    fake_progress_module = types.SimpleNamespace(
+        Progress=FakeProgress,
+        SpinnerColumn=FakeSpinnerColumn,
+        BarColumn=FakeBarColumn,
+        TextColumn=FakeTextColumn,
+    )
+    fake_console_module = types.SimpleNamespace(Console=FakeConsole)
+
+    monkeypatch.setitem(sys.modules, "rich.progress", fake_progress_module)
+    monkeypatch.setitem(sys.modules, "rich.console", fake_console_module)
+
+    with root_module._ProgressSteps("text", "Demo Progress", ["alpha", "beta"]) as progress:
+        progress.advance("Discovering subcommands")
+        progress.update_current("Discovering subcommands (3 visited, 2 queued, 1 leaves)")
+
+    assert any("[1/2]" in item for item in updates)
+    assert any("elapsed 0.0s" in item for item in updates)
+
+
+CLI_TREE_SCRIPT = """
+import json
+import click
+
+
+@click.group()
+def cli():
+    \"\"\"AAC root command.\"\"\"
+
+
 @cli.group()
 def admin():
-    pass
+    \"\"\"Administrative commands.\"\"\"
 
 
 @admin.command()
@@ -368,3 +674,104 @@ def test_import_cli_all_recursively_imports_leaf_commands(tmp_path: Path):
     assert remove_mount is not None
     assert add_mount.operation.id == "admin_add_user"
     assert remove_mount.operation.id == "admin_remove_user"
+
+
+def test_import_cli_all_uses_multistep_progress(tmp_path: Path, monkeypatch):
+    script_path = tmp_path / "aac_cli.py"
+    script_path.write_text(CLI_TREE_SCRIPT, encoding="utf-8")
+    config_path = tmp_path / "cts.yaml"
+    captured = {}
+
+    class RecordingProgress:
+        def __init__(self, output_format, title, steps):
+            captured["title"] = title
+            captured["steps"] = list(steps)
+            captured["advanced"] = []
+            captured["updated"] = []
+
+        def __enter__(self):
+            return self
+
+        def advance(self, label=None):
+            captured["advanced"].append(label)
+
+        def update_current(self, label):
+            captured["updated"].append(label)
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(root_module, "_ProgressSteps", RecordingProgress)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "cli",
+            "aac",
+            sys.executable,
+            str(script_path),
+            "--all",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["title"] == "Importing CLI tree 'aac'"
+    assert captured["steps"] == [
+        "Inspect root command",
+        "Discover subcommands",
+        "Import leaf operations",
+        "Prepare mounts",
+        "Write manifest",
+        "Compile config",
+    ]
+    assert captured["advanced"][:6] == [
+        "Inspecting root command",
+        "Discovering subcommands",
+        "Importing leaf operations",
+        "Preparing mounts",
+        "Writing manifest",
+        "Compiling config",
+    ]
+    assert any("Discovering subcommands" in item for item in captured["updated"])
+    assert any("Importing leaf operations" in item for item in captured["updated"])
+    assert any("Preparing mounts" in item for item in captured["updated"])
+
+
+def test_import_cli_all_group_help_uses_original_descriptions(tmp_path: Path):
+    script_path = tmp_path / "aac_cli.py"
+    script_path.write_text(CLI_TREE_SCRIPT, encoding="utf-8")
+    config_path = tmp_path / "cts.yaml"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "cli",
+            "aac",
+            sys.executable,
+            str(script_path),
+            "--all",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+
+    root_help = runner.invoke(main, ["--config", str(config_path), "aac", "--help"])
+    assert root_help.exit_code == 0
+    assert "AAC root command." in root_help.output
+
+    admin_help = runner.invoke(main, ["--config", str(config_path), "aac", "admin", "--help"])
+    assert admin_help.exit_code == 0
+    assert "Administrative commands." in admin_help.output

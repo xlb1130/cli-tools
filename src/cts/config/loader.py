@@ -6,7 +6,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Set
 
 import yaml
 
@@ -116,7 +116,11 @@ def _resolve_paths(explicit_path: Optional[str]) -> List[Path]:
     return paths
 
 
-def load_config(explicit_path: Optional[str] = None) -> LoadedConfig:
+def load_config(
+    explicit_path: Optional[str] = None,
+    *,
+    target_source_names: Optional[Iterable[str]] = None,
+) -> LoadedConfig:
     from cts.execution.logging import emit_config_event
     from cts.config.models import CTSConfig
     
@@ -142,6 +146,9 @@ def load_config(explicit_path: Optional[str] = None) -> LoadedConfig:
 
     for path in root_paths:
         merged = deep_merge(merged, _load_file_tree(path, loaded_paths, seen, stack=[]))
+
+    if target_source_names:
+        merged = _filter_raw_config_for_sources(merged, set(str(item) for item in target_source_names))
 
     config = CTSConfig.model_validate(merged)
     
@@ -172,6 +179,30 @@ def load_raw_config(explicit_path: Optional[str] = None) -> LoadedRawConfig:
         merged = deep_merge(merged, _load_file_tree(path, loaded_paths, seen, stack=[]))
 
     return LoadedRawConfig(raw=merged, paths=loaded_paths, root_paths=root_paths)
+
+
+def _filter_raw_config_for_sources(raw: Dict[str, Any], target_source_names: Set[str]) -> Dict[str, Any]:
+    if not target_source_names:
+        return raw
+
+    filtered = copy.deepcopy(raw)
+    sources = filtered.get("sources")
+    if isinstance(sources, dict):
+        filtered["sources"] = {
+            key: value
+            for key, value in sources.items()
+            if str(key) in target_source_names
+        }
+
+    mounts = filtered.get("mounts")
+    if isinstance(mounts, list):
+        filtered["mounts"] = [
+            item
+            for item in mounts
+            if isinstance(item, dict) and str(item.get("source") or "") in target_source_names
+        ]
+
+    return filtered
 
 
 def _load_file_tree(path: Path, loaded_paths: List[Path], seen: Set[Path], stack: List[Path]) -> Dict[str, Any]:

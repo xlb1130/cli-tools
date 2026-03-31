@@ -160,7 +160,7 @@ def compile_command_help(
     mount: Any,
     provider_help: Optional[Any] = None,
     schema_provenance: Optional[Dict[str, Any]] = None,
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     summary = mount.summary or (provider_help.summary if provider_help else None) or mount.operation.title
     description = mount.description or (provider_help.description if provider_help else None) or mount.operation.description or ""
     examples = _dedupe_strings(
@@ -179,19 +179,19 @@ def compile_command_help(
         or _mount_machine_list(mount, "expose_via")
         or _source_config_list(mount, "expose_to_surfaces")
     )
-    details = [
-        f"Risk: {mount.operation.risk}",
-        f"Provider: {mount.provider_type}",
-        f"Source: {mount.source_name}",
-        f"Operation: {mount.operation.id}",
+    detail_rows: List[Tuple[str, str]] = [
+        ("Risk", mount.operation.risk),
+        ("Provider", mount.provider_type),
+        ("Source", mount.source_name),
+        ("Operation", mount.operation.id),
     ]
     if surfaces:
-        details.append("Supported surfaces: " + ", ".join(surfaces))
+        detail_rows.append(("Supported surfaces", ", ".join(surfaces)))
     if mount.generated:
-        details.append(f"Generated from: {mount.generated_from}")
+        detail_rows.append(("Generated from", str(mount.generated_from)))
 
     long_help_parts = [description] if description else []
-    long_help_parts.append("Details:\n" + "\n".join(f"- {item}" for item in details))
+    long_help_parts.append("Details:\n" + "\n".join(f"- {label}: {value}" for label, value in detail_rows))
     if notes:
         long_help_parts.append("Notes:\n" + "\n".join(f"- {note}" for note in notes))
 
@@ -202,9 +202,18 @@ def compile_command_help(
     epilog_parts.append(f"Stable name: {mount.stable_name}")
 
     return {
+        "summary": summary,
         "short_help": summary,
         "help": "\n\n".join(part for part in long_help_parts if part),
         "epilog": "\n\n".join(epilog_parts),
+        "description": description,
+        "detail_rows": detail_rows,
+        "note_rows": [("Note", note) for note in notes],
+        "example_rows": [("Example", example) for example in examples],
+        "reference_rows": [
+            ("Stable mount id", mount.mount_id),
+            ("Stable name", mount.stable_name),
+        ],
     }
 
 

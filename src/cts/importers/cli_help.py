@@ -26,6 +26,8 @@ class CLIHelpTreeNode:
     help_command: List[str]
     help_text: str
     subcommands: List[str]
+    summary: Optional[str] = None
+    description: Optional[str] = None
 
 
 def build_imported_cli_operation(
@@ -95,12 +97,23 @@ def inspect_cli_help(
     help_flag: str = "--help",
 ) -> CLIHelpTreeNode:
     help_command, help_text = _run_help_command(command_argv, help_flag=help_flag)
+    parsed = summarize_help_text(help_text)
     return CLIHelpTreeNode(
         command_argv=list(command_argv),
         help_command=help_command,
         help_text=help_text,
         subcommands=extract_help_subcommands(help_text),
+        summary=parsed.get("summary"),
+        description=parsed.get("description"),
     )
+
+
+def summarize_help_text(help_text: str) -> Dict[str, Optional[str]]:
+    parsed = _parse_help_output(help_text)
+    return {
+        "summary": parsed.get("summary"),
+        "description": parsed.get("description"),
+    }
 
 
 def merge_operation_into_manifest(path: Path, operation: Dict[str, Any], *, executable: Optional[str] = None) -> Dict[str, Any]:

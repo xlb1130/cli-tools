@@ -10,3 +10,6 @@ frontend/app/dist/
 frontend/app/*.tsbuildinfo
 .DS_Store
 dist/
+
+# Ignore docs/design/ directory
+docs/design/

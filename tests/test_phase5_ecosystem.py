@@ -663,7 +663,7 @@ class TestCLIServeCommands:
 
                 result = runner.invoke(
                     main,
-                    ["--config", str(config_path), "serve", "http", "--open"],
+                    ["--config", str(config_path), "serve", "http", "--open", "--format", "json"],
                 )
 
                 assert result.exit_code == 0
@@ -687,7 +687,7 @@ class TestCLIServeCommands:
 
                 result = runner.invoke(
                     main,
-                    ["--config", str(config_path), "ui", "--open"],
+                    ["--config", str(config_path), "ui", "--open", "--format", "json"],
                 )
 
                 assert result.exit_code == 0

@@ -40,13 +40,29 @@ def test_dynamic_help_includes_provider_details():
     runner = CliRunner()
     result = runner.invoke(main, ["--config", str(CONFIG), "demo", "echo", "--help"])
     assert result.exit_code == 0
-    assert "Provider: cli" in result.output
-    assert "Risk: read" in result.output
-    assert "Stable mount id: demo-echo" in result.output
+    assert "Run a local CLI-backed operation and return JSON output." in result.output
+    assert "Details:" in result.output
+    assert "Provider" in result.output
+    assert "cli" in result.output
+    assert "Risk" in result.output
+    assert "read" in result.output
+    assert "Notes:" in result.output
+    assert "Examples:" in result.output
+    assert "References:" in result.output
+    assert "Stable mount id" in result.output
+    assert "demo-echo" in result.output
     assert "Request Parameters:" in result.output
     assert "Runtime Options:" in result.output
     assert "--text TEXT" in result.output
     assert "--input-json TEXT" in result.output
+
+
+def test_dynamic_group_help_uses_summary_in_command_list():
+    runner = CliRunner()
+    result = runner.invoke(main, ["--config", str(CONFIG), "demo", "--help"])
+    assert result.exit_code == 0
+    assert "echo  Run a local CLI-backed operation and return JSON output." in result.output
+    assert "echo  Details:" not in result.output
 
 
 def test_source_test_reports_health():

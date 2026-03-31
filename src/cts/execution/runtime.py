@@ -2,22 +2,21 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any, Dict
-
-from cts.execution.formatter import render_text_payload
-
-from jsonschema import Draft202012Validator
+from typing import TYPE_CHECKING, Any, Dict
 
 from cts.execution.errors import classify_exception
 from cts.execution.help_compiler import compile_input_schema
 from cts.execution.logging import redact_value
-from cts.models import ErrorEnvelope, ErrorInfo, MountRecord
-from cts.providers.base import ProviderError
+
+if TYPE_CHECKING:
+    from cts.models import MountRecord
 
 
 def validate_args(schema: Dict[str, Any], args: Dict[str, Any]) -> None:
     if not schema:
         return
+    from jsonschema import Draft202012Validator
+
     validator = Draft202012Validator(schema)
     errors = sorted(validator.iter_errors(args), key=lambda error: list(error.path))
     if not errors:
@@ -26,10 +25,10 @@ def validate_args(schema: Dict[str, Any], args: Dict[str, Any]) -> None:
     for error in errors:
         location = ".".join(str(part) for part in error.path) or "<root>"
         messages.append(f"{location}: {error.message}")
-    raise ProviderError("input validation failed: " + "; ".join(messages))
+    raise _provider_error("input validation failed: " + "; ".join(messages))
 
 
-def explain_mount(app: "CTSApp", mount: MountRecord, args: Dict[str, Any], runtime: Dict[str, Any]) -> Dict[str, Any]:
+def explain_mount(app: "CTSApp", mount: "MountRecord", args: Dict[str, Any], runtime: Dict[str, Any]) -> Dict[str, Any]:
     schema = compile_input_schema(mount)
     normalized_args = apply_schema_defaults(schema, args)
     hook_payload = app.dispatch_hooks(
@@ -69,7 +68,7 @@ def explain_mount(app: "CTSApp", mount: MountRecord, args: Dict[str, Any], runti
     return dict(updated_payload.get("result", payload))
 
 
-def invoke_mount(app: "CTSApp", mount: MountRecord, args: Dict[str, Any], runtime: Dict[str, Any]) -> Dict[str, Any]:
+def invoke_mount(app: "CTSApp", mount: "MountRecord", args: Dict[str, Any], runtime: Dict[str, Any]) -> Dict[str, Any]:
     schema = compile_input_schema(mount)
     normalized_args = apply_schema_defaults(schema, args)
     hook_payload = app.dispatch_hooks(
@@ -204,13 +203,15 @@ def invoke_mount(app: "CTSApp", mount: MountRecord, args: Dict[str, Any], runtim
 def build_error_envelope(
     exc: Exception,
     stage: str,
-    mount: MountRecord | None = None,
+    mount: "MountRecord" | None = None,
     source: str | None = None,
     provider_type: str | None = None,
     run_id: str | None = None,
     trace_id: str | None = None,
 ) -> Dict[str, Any]:
     classification = classify_exception(exc, stage)
+    from cts.models import ErrorEnvelope, ErrorInfo
+
     return ErrorEnvelope(
         error=ErrorInfo(
             type=classification.type,
@@ -242,6 +243,8 @@ def apply_schema_defaults(schema: Dict[str, Any], args: Dict[str, Any]) -> Dict[
 def render_payload(payload: Dict[str, Any], output_format: str) -> str:
     if output_format == "json":
         return json.dumps(payload, ensure_ascii=False, indent=2)
+    from cts.execution.formatter import render_text_payload
+
     return render_text_payload(payload)
 
 
@@ -306,3 +309,9 @@ def _get_reliability_manager(app: "CTSApp"):
                 app._reliability_manager.rate_limit_manager.register_budget(key, budget)
 
     return app._reliability_manager
+
+
+def _provider_error(message: str):
+    from cts.providers.base import ProviderError
+
+    return ProviderError(message)

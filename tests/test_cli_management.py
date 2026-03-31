@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 from click.testing import CliRunner
 
+import cts.cli.root as root_module
 from cts.cli.root import main
 from cts.providers import mcp_cli
 
@@ -105,7 +106,7 @@ def test_mount_add_and_alias_add_enable_dynamic_command():
 
         help_result = runner.invoke(main, ["--config", str(config_path), "issue", "get", "--help"])
         assert help_result.exit_code == 0
-        assert "Stable mount id: jira-get-issue" in help_result.output
+        assert "Stable mount id  jira-get-issue" in help_result.output
 
         mount_show = runner.invoke(
             main,
@@ -167,6 +168,10 @@ def test_import_mcp_apply_persists_source_and_mounts(tmp_path: Path, monkeypatch
     assert raw["sources"]["cn12306"]["config_file"] == str(config_path.parent / "servers.json")
     assert raw["mounts"][0]["id"] == "cn12306-query_train"
     assert raw["mounts"][0]["command"]["path"] == ["cn12306", "query_train"]
+
+    help_result = runner.invoke(main, ["--config", str(config_path), "cn12306", "--help"])
+    assert help_result.exit_code == 0
+    assert "Query train tickets" in help_result.output
 
 
 def test_import_shell_apply_persists_source_and_mount_and_executes(tmp_path: Path):
@@ -342,6 +347,83 @@ def test_import_mcp_apply_surfaces_discovery_error(tmp_path: Path, monkeypatch):
     assert payload["discovery"]["ok"] is False
     assert payload["discovery"]["operation_count"] == 0
     assert payload["discovery_report_path"]
+
+
+def test_import_mcp_apply_updates_progress_for_each_mount(tmp_path: Path, monkeypatch):
+    config_path = tmp_path / "cts.yaml"
+    captured = {}
+
+    class RecordingProgress:
+        def __init__(self, output_format, title, steps):
+            captured["title"] = title
+            captured["steps"] = list(steps)
+            captured["advanced"] = []
+            captured["updated"] = []
+
+        def __enter__(self):
+            return self
+
+        def advance(self, label=None):
+            captured["advanced"].append(label)
+
+        def update_current(self, label):
+            captured["updated"].append(label)
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_bridge(source_config, app, command, primitive_type=None, target=None, args=None, timeout_seconds=None):
+        assert command == "list-primitives"
+        return {
+            "ok": True,
+            "server": "demo-server",
+            "transport_type": "sse",
+            "primitives": [
+                {"primitive_type": "tool", "name": "query_train", "description": "Query train tickets"},
+                {"primitive_type": "tool", "name": "refund_ticket", "description": "Refund ticket"},
+            ],
+        }
+
+    monkeypatch.setattr(root_module, "_ProgressSteps", RecordingProgress)
+    monkeypatch.setattr(mcp_cli, "_run_bridge_command", fake_bridge)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "mcp",
+            "cn12306",
+            "--server-config",
+            '{"type":"sse","url":"https://example.com/sse"}',
+            "--apply",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["title"] == "Importing MCP source 'cn12306'"
+    assert captured["steps"] == [
+        "Prepare import plan",
+        "Write server config",
+        "Compile source config",
+        "Discover tools",
+        "Create mounts",
+    ]
+    assert captured["advanced"] == [
+        "Preparing import plan",
+        "Writing server config",
+        "Compiling source config",
+        "Discovering tools",
+        "Creating mounts",
+    ]
+    assert captured["updated"] == [
+        "Creating mounts (1/2: query_train)",
+        "Creating mounts (2/2: refund_ticket)",
+    ]
 
 
 def test_import_mcp_default_servers_file_uses_default_config_dir(monkeypatch):
@@ -792,6 +874,81 @@ sources:
         assert payload["mount_ids"] == ["test-api-get-item"]
 
 
+def test_mount_import_uses_multistep_progress(tmp_path: Path, monkeypatch):
+    config_path = tmp_path / "cts.yaml"
+    config_path.write_text(
+        """
+version: 1
+sources:
+  test-api:
+    type: http
+    base_url: https://api.example.com
+    operations:
+      get_item:
+        title: Get Item
+        risk: read
+        provider_config:
+          method: GET
+          path: /items/{id}
+      list_items:
+        title: List Items
+        risk: read
+        provider_config:
+          method: GET
+          path: /items
+""",
+        encoding="utf-8",
+    )
+    captured = {}
+
+    class RecordingProgress:
+        def __init__(self, output_format, title, steps):
+            captured["title"] = title
+            captured["steps"] = list(steps)
+            captured["advanced"] = []
+            captured["updated"] = []
+
+        def __enter__(self):
+            return self
+
+        def advance(self, label=None):
+            captured["advanced"].append(label)
+
+        def update_current(self, label):
+            captured["updated"].append(label)
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(root_module, "_ProgressSteps", RecordingProgress)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "mount",
+            "import",
+            "test-api",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["title"] == "Importing mounts from 'test-api'"
+    assert captured["steps"] == ["Prepare mounts", "Compile config"]
+    assert captured["advanced"] == [
+        "Preparing 2 operation(s)",
+        "Creating 2 mount(s)",
+    ]
+    assert captured["updated"] == [
+        "Preparing mounts (1/2: get_item)",
+        "Preparing mounts (2/2: list_items)",
+    ]
+
+
 CLI_IMPORT_SCRIPT = """
 import json
 import click
@@ -1008,3 +1165,78 @@ def test_completion_bootstrap_zsh():
     assert result.exit_code == 0
     # Should output completion-related content
     assert len(result.output) > 0
+
+
+def test_completion_bootstrap_text_mode_is_user_friendly():
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "completion",
+            "bootstrap",
+            "--shell",
+            "zsh",
+            "--format",
+            "text",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Completion Bootstrap (zsh)" in result.output
+    assert "Copy Command" in result.output
+
+
+def test_show_commands_default_to_text():
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        config_path = Path("cts.yaml")
+        config_path.write_text(
+            """
+version: 1
+sources:
+  demo:
+    type: http
+    base_url: https://api.example.com
+    operations:
+      ping:
+        title: Ping
+        provider_config:
+          method: GET
+          path: /ping
+mounts:
+  - id: demo-ping
+    source: demo
+    operation: ping
+auth_profiles:
+  demo-auth:
+    type: bearer
+secrets:
+  demo_token:
+    provider: env
+    env: DEMO_TOKEN
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+        source_result = runner.invoke(main, ["--config", str(config_path), "source", "show", "demo"])
+        mount_result = runner.invoke(main, ["--config", str(config_path), "mount", "show", "demo-ping"])
+        auth_result = runner.invoke(main, ["--config", str(config_path), "auth", "status"])
+        secret_result = runner.invoke(main, ["--config", str(config_path), "secret", "show", "demo_token"])
+        doctor_result = runner.invoke(main, ["--config", str(config_path), "doctor"])
+
+        assert source_result.exit_code == 0
+        assert "demo (http)" in source_result.output or "Source demo" in source_result.output
+        assert "Next Suggested Command" in source_result.output
+        assert mount_result.exit_code == 0
+        assert "Mount demo-ping" in mount_result.output
+        assert "Next Suggested Command" in mount_result.output
+        assert auth_result.exit_code == 0
+        assert "Auth Profiles" in auth_result.output
+        detail_auth_result = runner.invoke(main, ["--config", str(config_path), "auth", "status", "demo-auth"])
+        assert detail_auth_result.exit_code == 0
+        assert "Next Suggested Command" in detail_auth_result.output
+        assert secret_result.exit_code == 0
+        assert "Secret demo_token" in secret_result.output
+        assert "Next Suggested Command" in secret_result.output
+        assert doctor_result.exit_code == 0
+        assert "Doctor" in doctor_result.output

@@ -5,6 +5,7 @@ from click.testing import CliRunner
 
 from cts.app import build_app
 from cts.cli.root import main
+from cts.models import InvokeRequest, OperationDescriptor
 from cts.providers import mcp_cli
 
 
@@ -189,3 +190,76 @@ mounts:
     assert calls["count"] == 0
     assert "Search from imported MCP manifest" in result.output
     assert "--query TEXT" in result.output
+
+
+def test_mcp_invoke_falls_back_to_node_bridge_on_cli_server_parse_error(tmp_path: Path, monkeypatch):
+    config_path = tmp_path / "cts.yaml"
+    servers_path = tmp_path / "servers.json"
+    servers_path.write_text('{"mcpServers":{"demo":{"command":"demo-server"}}}\n', encoding="utf-8")
+    config_path.write_text(
+        """
+version: 1
+sources:
+  remote_mcp:
+    type: mcp
+    config_file: ./servers.json
+    server: demo
+    operations:
+      query_recent_workitem_list:
+        title: Query Recent Workitem List
+        description: Query workitems from MCP
+        provider_config:
+          mcp_primitive_type: tool
+mounts: []
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    app = build_app(str(config_path))
+    app.source_operations["remote_mcp"] = {
+        "query_recent_workitem_list": OperationDescriptor(
+            id="query_recent_workitem_list",
+            source="remote_mcp",
+            provider_type="mcp",
+            title="Query Recent Workitem List",
+            description="Query workitems from MCP",
+            kind="action",
+            risk="read",
+            input_schema={"type": "object", "properties": {"limit": {"type": "integer"}}},
+            provider_config={"mcp_primitive_type": "tool"},
+        )
+    }
+    provider = mcp_cli.MCPCLIProvider()
+    calls = []
+
+    def fake_run(argv, capture_output, text, timeout, check):
+        calls.append(list(argv))
+        if argv[0] == "mcp-cli":
+            return SimpleNamespace(
+                returncode=1,
+                stdout="",
+                stderr='Error [SERVER_NOT_FOUND]: Server "call-tool" not found in config\nAvailable servers: demo',
+            )
+        return SimpleNamespace(
+            returncode=0,
+            stdout='{"ok": true, "result": {"items": [1, 2, 3]}}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr(mcp_cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(mcp_cli, "_resolve_mcp_cli_binary", lambda source_config: "mcp-cli")
+    monkeypatch.setattr(mcp_cli, "_build_bridge_argv", lambda *args, **kwargs: ["node", "bridge.mjs", "call-tool"])
+
+    result = provider.invoke(
+        "remote_mcp",
+        app.config.sources["remote_mcp"],
+        InvokeRequest(source="remote_mcp", operation_id="query_recent_workitem_list", args={"limit": 10}),
+        app,
+    )
+
+    assert result.ok is True
+    assert result.data == {"items": [1, 2, 3]}
+    assert result.metadata["strategy"] == "node-bridge"
+    assert calls[0][:4] == ["mcp-cli", "-c", str(servers_path), "call-tool"]
+    assert calls[1] == ["node", "bridge.mjs", "call-tool"]

@@ -44,15 +44,17 @@ def _render_text_payload_fallback(payload: Dict[str, Any]) -> str:
         return "\n".join(lines)
 
     if "mounts" in payload:
-        return "\n".join(
-            f"{item['mount_id']}: {' '.join(item.get('command_path') or [])} ({item.get('provider_type') or '-'})"
+        lines = ["Mounts"]
+        lines.extend(
+            f"- {item['mount_id']}: {' '.join(item.get('command_path') or [])} ({item.get('provider_type') or '-'})"
             for item in payload["mounts"]
         )
+        return "\n".join(lines)
 
     if "errors" in payload and "warnings" in payload:
         lines = ["Config lint: OK" if payload.get("ok") else "Config lint: FAILED"]
         if payload.get("loaded_paths"):
-            lines.append("Loaded files:")
+            lines.append("Loaded Files:")
             lines.extend(f"- {item}" for item in payload["loaded_paths"])
         if payload.get("warnings"):
             lines.append("Warnings:")
@@ -62,18 +64,52 @@ def _render_text_payload_fallback(payload: Dict[str, Any]) -> str:
             lines.extend(f"- {item['code']}: {item['message']}" for item in payload["errors"])
         return "\n".join(lines)
 
+    if "checks" in payload and "runtime_paths" in payload:
+        lines = [
+            "Doctor",
+            f"- config_files: {len(payload.get('config_paths') or [])}",
+            f"- checks: {len(payload.get('checks') or [])}",
+            f"- conflicts: {len(payload.get('conflicts') or [])}",
+            f"- discovery_errors: {len(payload.get('discovery_errors') or {})}",
+        ]
+        lines.append("Health Checks")
+        lines.extend(
+            f"- {item.get('source') or '-'} provider={item.get('provider_type') or '-'} ok={item.get('ok')} provider_ok={item.get('provider_ok')}"
+            for item in payload.get("checks") or []
+        )
+        lines.append("Runtime Paths")
+        lines.extend(f"- {key}: {value}" for key, value in (payload.get("runtime_paths") or {}).items())
+        compatibility = payload.get("compatibility") or {}
+        if compatibility:
+            lines.append("Compatibility")
+            lines.append(f"- compatibility_ok: {compatibility.get('ok')}")
+            lines.extend(f"- {item.get('message')}" for item in compatibility.get("issues") or [])
+        auth = payload.get("auth") or {}
+        if auth:
+            lines.append("Auth Validation")
+            lines.append(f"- auth_valid: {auth.get('valid_count', 0)}/{auth.get('total_count', 0)}")
+        reliability = payload.get("reliability") or {}
+        if reliability:
+            lines.append("Reliability")
+            lines.append(f"- reliability_budgets: {reliability.get('configured_budget_count', 0)}")
+        return "\n".join(lines)
+
     if "items" in payload:
         items = payload["items"]
         if items and isinstance(items[0], dict) and items[0].get("run_id"):
-            return "\n".join(
-                f"{item['run_id']} {item.get('mode')} ok={item.get('ok')} mount={item.get('mount_id') or '-'}"
+            lines = ["Runs"]
+            lines.extend(
+                f"- {item['run_id']} {item.get('mode')} ok={item.get('ok')} mount={item.get('mount_id') or '-'}"
                 for item in items
             )
+            return "\n".join(lines)
         if items and isinstance(items[0], dict) and items[0].get("event"):
-            return "\n".join(
-                f"{item.get('ts')} {item.get('level')} {item.get('event')} source={item.get('source') or '-'} mount={item.get('mount_id') or '-'}"
+            lines = ["Logs"]
+            lines.extend(
+                f"- {item.get('ts')} {item.get('level')} {item.get('event')} source={item.get('source') or '-'} mount={item.get('mount_id') or '-'}"
                 for item in items
             )
+            return "\n".join(lines)
         if items and isinstance(items[0], dict) and items[0].get("source"):
             lines = []
             for item in items:
@@ -92,26 +128,88 @@ def _render_text_payload_fallback(payload: Dict[str, Any]) -> str:
                 lines.append(f"report={payload['report_path']}")
             if payload.get("capability_snapshot_path"):
                 lines.append(f"capability_snapshot={payload['capability_snapshot_path']}")
+            return "\n".join(["Sources", *[f"- {line}" for line in lines]])
+        if items and isinstance(items[0], dict) and items[0].get("name") and "configured" in items[0] and "source_count" in items[0]:
+            lines = ["Auth Profiles"]
+            lines.extend(
+                f"- {item.get('name')} state={item.get('state')} configured={item.get('configured')} sources={item.get('source_count')}"
+                for item in items
+            )
+            if payload.get("summary"):
+                lines.append("Summary")
+                lines.extend(f"- {key}: {_stringify(value)}" for key, value in payload["summary"].items())
+            return "\n".join(lines)
+        if items and isinstance(items[0], dict) and items[0].get("name") and items[0].get("provider") and "value_present" in items[0]:
+            lines = ["Secrets"]
+            lines.extend(
+                f"- {item.get('name')} provider={item.get('provider')} state={item.get('state')} value={'present' if item.get('value_present') else 'missing'}"
+                for item in items
+            )
+            if payload.get("summary"):
+                lines.append("Summary")
+                lines.extend(f"- {key}: {_stringify(value)}" for key, value in payload["summary"].items())
+            return "\n".join(lines)
+        if items and isinstance(items[0], dict) and items[0].get("name") and items[0].get("type") and "operation_count" in items[0]:
+            lines = ["Sources"]
+            lines.extend(
+                f"- {item.get('name')} ({item.get('type')}) discovery={item.get('discovery_mode')} operations={item.get('operation_count')} auth={item.get('auth_ref') or '-'}"
+                for item in items
+            )
             return "\n".join(lines)
         return "\n".join(json.dumps(item, ensure_ascii=False) for item in items)
 
-    if payload.get("mount_id") and payload.get("command_path"):
-        return "\n".join(
-            [
-                f"{payload['mount_id']}: {' '.join(payload['command_path'])}",
-                f"source={payload.get('source')} provider={payload.get('provider_type')} risk={payload.get('risk')}",
-                f"stable_name={payload.get('stable_name')}",
-            ]
-        )
+    if payload.get("surface") and payload.get("base_url"):
+        lines = [f"Surface {payload.get('surface')}"]
+        lines.append(f"URL: {payload.get('base_url')}")
+        if payload.get("browser_url"):
+            lines.append(f"Open: {payload.get('browser_url')}")
+        if payload.get("ui_enabled") is not None:
+            lines.append(f"UI Enabled: {payload.get('ui_enabled')}")
+        if payload.get("ui_dir"):
+            lines.append(f"UI Dir: {payload.get('ui_dir')}")
+        if payload.get("tools_count") is not None:
+            lines.append(f"Tools: {payload.get('tools_count')}")
+        if payload.get("next_command"):
+            lines.append("Next")
+            lines.append(f"- {payload.get('next_command')}")
+        return "\n".join(lines)
+
+    if payload.get("action") == "completion_bootstrap":
+        lines = [f"Completion Bootstrap ({payload.get('shell')})"]
+        if payload.get("message"):
+            lines.append(payload["message"])
+        if payload.get("copy_command"):
+            lines.append("Copy Command")
+            lines.append(f"- {payload['copy_command']}")
+        if payload.get("command_preview"):
+            lines.append("Command Preview")
+            lines.extend(f"- {line}" for line in str(payload["command_preview"]).splitlines())
+        return "\n".join(lines)
 
     if payload.get("name") and payload.get("compiled_operation_count") is not None:
-        return "\n".join(
-            [
-                f"{payload['name']} ({payload.get('type')})",
-                f"operations={payload.get('compiled_operation_count')} enabled={payload.get('enabled')}",
-                f"origin={payload.get('origin_file') or '<unknown>'}",
-            ]
-        )
+        lines = [
+            f"Source {payload['name']} ({payload.get('type')})",
+            f"operations={payload.get('compiled_operation_count')} enabled={payload.get('enabled')}",
+            f"origin={payload.get('origin_file') or '<unknown>'}",
+        ]
+        auth = payload.get("auth") or {}
+        if auth:
+            lines.append(f"auth={auth.get('state') or '-'}")
+        discovery_state = payload.get("discovery_state") or {}
+        if discovery_state:
+            lines.append(f"discovery_state={_stringify(discovery_state)}")
+        drift_state = payload.get("drift_state") or {}
+        if drift_state:
+            lines.append(f"drift_state={_stringify(drift_state)}")
+        operation_ids = payload.get("operation_ids") or []
+        if operation_ids:
+            lines.append("Operation IDs")
+            lines.extend(f"- {item}" for item in operation_ids)
+        next_commands = payload.get("next_commands") or []
+        if next_commands:
+            lines.append("Next Suggested Command")
+            lines.extend(f"- {item}" for item in next_commands)
+        return "\n".join(lines)
 
     if payload.get("source") and payload.get("provider_type") and "operation_count" in payload:
         lines = [
@@ -128,10 +226,145 @@ def _render_text_payload_fallback(payload: Dict[str, Any]) -> str:
 
     if payload.get("run_id") and payload.get("mode"):
         lines = [
-            f"run_id={payload['run_id']}",
+            f"Run {payload['run_id']}",
             f"mode={payload.get('mode')} ok={payload.get('ok')} exit_code={payload.get('exit_code')}",
             f"mount={payload.get('mount_id') or '-'} source={payload.get('source') or '-'}",
         ]
+        if payload.get("error_type") or payload.get("error_code"):
+            lines.append(f"error_type={payload.get('error_type') or '-'} error_code={payload.get('error_code') or '-'}")
+        if payload.get("summary"):
+            lines.append("Summary")
+            lines.append(f"- {payload.get('summary')}")
+        if payload.get("metadata") is not None:
+            lines.append("Metadata")
+            lines.append(f"- {json.dumps(payload.get('metadata'), ensure_ascii=False)}")
+        return "\n".join(lines)
+
+    if "profiles" in payload and "valid_count" in payload and "total_count" in payload:
+        lines = [
+            "Auth Validation",
+            f"- ok={payload.get('ok')}",
+            f"- valid={payload.get('valid_count')}/{payload.get('total_count')}",
+        ]
+        for name, item in sorted((payload.get("profiles") or {}).items()):
+            issues = ",".join(issue.get("code", "-") for issue in item.get("issues") or []) or "-"
+            actions = ",".join(action.get("action", "-") for action in item.get("actions") or []) or "-"
+            lines.append(f"- {name}: state={item.get('state')} valid={item.get('valid')} issues={issues} actions={actions}")
+        return "\n".join(lines)
+
+    if "valid" in payload and payload.get("auth_profile"):
+        lines = [
+            f"Auth Check {payload['auth_profile']}",
+            f"- valid={payload.get('valid')}",
+            f"- state={payload.get('state') or '-'}",
+        ]
+        if payload.get("issues"):
+            lines.append("Issues")
+            lines.extend(f"- {item.get('code')}: {item.get('message')}" for item in payload["issues"])
+        if payload.get("actions"):
+            lines.append("Actions")
+            lines.extend(f"- {item.get('action')}: {item.get('command') or item.get('message') or '-'}" for item in payload["actions"])
+        if payload.get("status"):
+            lines.append("Status")
+            lines.extend(f"- {key}: {_stringify(value)}" for key, value in payload["status"].items())
+        return "\n".join(lines)
+
+    if payload.get("name") and "configured" in payload and "source_count" in payload:
+        lines = [
+            f"Auth {payload['name']}",
+            f"state={payload.get('state') or '-'} configured={payload.get('configured')} sources={payload.get('source_count')}",
+        ]
+        source_names = payload.get("source_names") or []
+        if source_names:
+            lines.append("Sources")
+            lines.extend(f"- {item}" for item in source_names)
+        if payload.get("status"):
+            lines.append("Status")
+            lines.extend(f"- {key}: {_stringify(value)}" for key, value in payload["status"].items())
+        next_commands = payload.get("next_commands") or []
+        if next_commands:
+            lines.append("Next Suggested Command")
+            lines.extend(f"- {item}" for item in next_commands)
+        return "\n".join(lines)
+
+    if payload.get("name") and payload.get("provider") and "value_present" in payload:
+        lines = [
+            f"Secret {payload['name']}",
+            f"provider={payload.get('provider')} state={payload.get('state') or '-'} value={'present' if payload.get('value_present') else 'missing'}",
+        ]
+        metadata = payload.get("metadata") or {}
+        if metadata:
+            lines.append("Metadata")
+            lines.extend(f"- {key}: {_stringify(value)}" for key, value in metadata.items())
+        next_commands = payload.get("next_commands") or []
+        if next_commands:
+            lines.append("Next Suggested Command")
+            lines.extend(f"- {item}" for item in next_commands)
+        return "\n".join(lines)
+
+    if payload.get("ok") is True and payload.get("action"):
+        lines = [f"Action {payload.get('action')}"]
+        change_rows = _action_change_rows(payload)
+        if change_rows:
+            lines.append("What Changed")
+            lines.extend(f"- {key}: {value}" for key, value in change_rows)
+        where_rows = _action_where_rows(payload)
+        if where_rows:
+            lines.append("Where Written")
+            lines.extend(f"- {key}: {value}" for key, value in where_rows)
+        if payload.get("warnings"):
+            lines.append("Warnings")
+            lines.extend(f"- {item}" for item in payload["warnings"])
+        next_commands = list(payload.get("next_commands") or [])
+        if payload.get("next_command"):
+            next_commands.insert(0, payload["next_command"])
+        if next_commands:
+            lines.append("Next Suggested Command")
+            lines.extend(f"- {item}" for item in next_commands)
+        return "\n".join(lines)
+
+    if _is_execution_payload(payload):
+        lines = [
+            f"Execution {payload.get('mount_id') or payload.get('stable_name') or '-'}",
+            f"status={'ok' if payload.get('ok') else 'failed'} mode={payload.get('mode') or '-'} duration={_format_duration(payload.get('duration_ms'))}",
+            f"provider={payload.get('provider_type') or '-'} source={payload.get('source') or '-'} operation={payload.get('operation_id') or '-'}",
+        ]
+        if payload.get("summary"):
+            lines.append(f"summary={payload['summary']}")
+        reliability = payload.get("reliability") or {}
+        if reliability:
+            lines.append(
+                "reliability="
+                + f"attempts={reliability.get('attempts', 1)}"
+                + f" retried={reliability.get('was_retried', False)}"
+                + f" duplicate={reliability.get('was_duplicate', False)}"
+            )
+        if payload.get("text"):
+            lines.append("Output")
+            lines.append(str(payload["text"]))
+        elif payload.get("data") is not None:
+            lines.append("Output")
+            lines.append(json.dumps(payload["data"], ensure_ascii=False, indent=2))
+        metadata = payload.get("metadata") or {}
+        if metadata:
+            lines.append("Metadata")
+            lines.append(json.dumps(metadata, ensure_ascii=False))
+        return "\n".join(lines)
+
+    if payload.get("mount_id") and payload.get("command_path"):
+        lines = [
+            f"Mount {payload['mount_id']}: {' '.join(payload['command_path'])}",
+            f"source={payload.get('source')} provider={payload.get('provider_type')} risk={payload.get('risk')}",
+            f"stable_name={payload.get('stable_name')}",
+        ]
+        aliases = payload.get("aliases") or []
+        if aliases:
+            lines.append("Aliases")
+            lines.extend(f"- {' '.join(item)}" for item in aliases)
+        next_commands = payload.get("next_commands") or []
+        if next_commands:
+            lines.append("Next Suggested Command")
+            lines.extend(f"- {item}" for item in next_commands)
         return "\n".join(lines)
 
     if payload.get("text"):
@@ -173,6 +406,9 @@ def _payload_to_renderable(payload: Dict[str, Any]) -> RenderableType:
 
     if "items" in payload:
         return _render_items(payload)
+
+    if _is_execution_payload(payload):
+        return _render_execution_result(payload)
 
     if payload.get("mount_id") and payload.get("command_path"):
         return _render_mount_details(payload)
@@ -432,6 +668,75 @@ def _render_key_values(*, title: str, rows: Iterable[tuple[str, str]]) -> Render
     return Panel(table, title=title, box=box.ROUNDED, expand=False)
 
 
+def _is_execution_payload(payload: Dict[str, Any]) -> bool:
+    return bool(
+        payload.get("mount_id")
+        and payload.get("source")
+        and payload.get("provider_type")
+        and payload.get("operation_id")
+        and (
+            "data" in payload
+            or "text" in payload
+            or "stderr" in payload
+            or "status_code" in payload
+            or payload.get("mode") in {"invoke", "explain"}
+        )
+    )
+
+
+def _format_duration(value: Any) -> str:
+    if value in (None, ""):
+        return "-"
+    try:
+        duration_ms = int(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if duration_ms < 1000:
+        return f"{duration_ms} ms"
+    return f"{duration_ms / 1000:.2f} s"
+
+
+def _render_execution_result(payload: Dict[str, Any]) -> RenderableType:
+    summary = _render_key_values(
+        title=f"Execution {payload.get('mount_id') or payload.get('stable_name') or '-'}",
+        rows=[
+            ("Status", "ok" if payload.get("ok") else "failed"),
+            ("Mode", payload.get("mode") or "-"),
+            ("Duration", _format_duration(payload.get("duration_ms"))),
+            ("Provider", payload.get("provider_type") or "-"),
+            ("Source", payload.get("source") or "-"),
+            ("Operation", payload.get("operation_id") or "-"),
+            ("Risk", payload.get("risk") or "-"),
+            ("Run ID", payload.get("run_id") or "-"),
+            ("Trace ID", payload.get("trace_id") or "-"),
+        ],
+    )
+    blocks: List[RenderableType] = [summary]
+    if payload.get("summary"):
+        blocks.append(Panel(Text(str(payload["summary"])), title="Summary", expand=False))
+    if payload.get("data") is not None:
+        blocks.append(Panel(JSON.from_data(payload["data"], ensure_ascii=False, indent=2), title="Output", expand=False))
+    elif payload.get("text"):
+        blocks.append(Panel(Text(str(payload["text"])), title="Output", expand=False))
+    if payload.get("stderr"):
+        blocks.append(Panel(Text(str(payload["stderr"])), title="Stderr", expand=False, border_style="yellow"))
+    reliability = payload.get("reliability") or {}
+    if reliability:
+        rows = [
+            ("Attempts", str(reliability.get("attempts", 1))),
+            ("Retried", str(reliability.get("was_retried", False))),
+            ("Rate Limited", str(reliability.get("was_rate_limited", False))),
+            ("Duplicate", str(reliability.get("was_duplicate", False))),
+        ]
+        if reliability.get("duration_ms") is not None:
+            rows.append(("Reliability Duration", _format_duration(reliability.get("duration_ms"))))
+        blocks.append(_render_key_values(title="Reliability", rows=rows))
+    metadata = payload.get("metadata") or {}
+    if metadata:
+        blocks.append(Panel(JSON.from_data(metadata, ensure_ascii=False, indent=2), title="Metadata", expand=False))
+    return Group(*blocks)
+
+
 def _render_single_column_table(title: str, items: Iterable[Any]) -> RenderableType:
     table = Table(title=title, box=box.SIMPLE)
     table.add_column("Value")
@@ -461,9 +766,21 @@ def _render_source_details(payload: Dict[str, Any]) -> RenderableType:
         ],
     )
     blocks: List[RenderableType] = [summary]
+    auth = payload.get("auth") or {}
+    if auth:
+        blocks.append(_render_key_values(title="Auth", rows=[(k, _stringify(v)) for k, v in auth.items()]))
+    discovery_state = payload.get("discovery_state") or {}
+    if discovery_state:
+        blocks.append(_render_key_values(title="Discovery State", rows=[(k, _stringify(v)) for k, v in discovery_state.items()]))
+    drift_state = payload.get("drift_state") or {}
+    if drift_state:
+        blocks.append(_render_key_values(title="Drift State", rows=[(k, _stringify(v)) for k, v in drift_state.items()]))
     operation_ids = payload.get("operation_ids") or []
     if operation_ids:
         blocks.append(_render_single_column_table("Operation IDs", operation_ids))
+    next_commands = payload.get("next_commands") or []
+    if next_commands:
+        blocks.append(_render_single_column_table("Next Suggested Command", next_commands))
     return Group(*blocks)
 
 
@@ -488,6 +805,14 @@ def _render_mount_details(payload: Dict[str, Any]) -> RenderableType:
         blocks.append(Panel(Text(str(payload["summary"])), title="Summary", expand=False))
     if payload.get("description"):
         blocks.append(Panel(Text(str(payload["description"])), title="Description", expand=False))
+    if payload.get("supported_surfaces"):
+        blocks.append(_render_single_column_table("Supported Surfaces", payload["supported_surfaces"]))
+    params = payload.get("params") or {}
+    if params:
+        blocks.append(_render_single_column_table("Parameters", [f"{name}: {_stringify(item)}" for name, item in params.items()]))
+    next_commands = payload.get("next_commands") or []
+    if next_commands:
+        blocks.append(_render_single_column_table("Next Suggested Command", next_commands))
     return Group(*blocks)
 
 
@@ -513,9 +838,18 @@ def _render_app_summary(payload: Dict[str, Any]) -> RenderableType:
 
 
 def _render_action_result(payload: Dict[str, Any]) -> RenderableType:
-    ignored_keys = {"ok", "text", "data", "config", "compiled", "profile"}
-    rows = [(key.replace("_", " ").title(), _stringify(value)) for key, value in payload.items() if key not in ignored_keys]
-    blocks: List[RenderableType] = [_render_key_values(title=f"Action {payload['action']}", rows=rows)]
+    blocks: List[RenderableType] = [
+        _render_key_values(
+            title=f"Action {payload['action']}",
+            rows=[("Status", "ok"), ("Action", str(payload.get("action") or "-"))],
+        )
+    ]
+    changed_rows = _action_change_rows(payload)
+    if changed_rows:
+        blocks.append(_render_key_values(title="What Changed", rows=changed_rows))
+    where_rows = _action_where_rows(payload)
+    if where_rows:
+        blocks.append(_render_key_values(title="Where Written", rows=where_rows))
     if payload.get("profile") is not None and isinstance(payload["profile"], dict):
         profile = payload["profile"]
         if "configured" in profile and "source_count" in profile:
@@ -524,6 +858,11 @@ def _render_action_result(payload: Dict[str, Any]) -> RenderableType:
             blocks.append(Panel(JSON.from_data(profile, ensure_ascii=False, indent=2), title="Profile", expand=False))
     if payload.get("warnings"):
         blocks.append(_render_single_column_table("Warnings", payload["warnings"]))
+    next_commands = list(payload.get("next_commands") or [])
+    if payload.get("next_command"):
+        next_commands.insert(0, payload["next_command"])
+    if next_commands:
+        blocks.append(_render_single_column_table("Next Suggested Command", next_commands))
     if payload.get("config") is not None:
         blocks.append(Panel(JSON.from_data(payload["config"], ensure_ascii=False, indent=2), title="Config", expand=False))
     if payload.get("compiled") is not None:
@@ -531,7 +870,45 @@ def _render_action_result(payload: Dict[str, Any]) -> RenderableType:
     return Group(*blocks)
 
 
+def _action_change_rows(payload: Dict[str, Any]) -> List[tuple[str, str]]:
+    rows: List[tuple[str, str]] = []
+    for key in (
+        "source",
+        "source_name",
+        "provider_type",
+        "mount_id",
+        "operation_id",
+        "reconcile_action",
+        "removed_mounts",
+        "remaining_count",
+        "mounts_created",
+        "shell",
+        "base_url",
+        "tools_count",
+    ):
+        if payload.get(key) is not None:
+            rows.append((key.replace("_", " ").title(), _stringify(payload[key])))
+    if payload.get("alias") is not None:
+        rows.append(("Alias", _stringify(payload["alias"])))
+    if payload.get("message") and payload.get("action") in {"completion_install", "completion_bootstrap"}:
+        rows.append(("Message", str(payload["message"])))
+    return rows
+
+
+def _action_where_rows(payload: Dict[str, Any]) -> List[tuple[str, str]]:
+    rows: List[tuple[str, str]] = []
+    for key in ("file", "completion_script", "servers_file", "ui_dir", "browser_url"):
+        if payload.get(key):
+            rows.append((key.replace("_", " ").title(), _stringify(payload[key])))
+    if payload.get("created_file") is not None:
+        rows.append(("Created File", str(payload["created_file"])))
+    return rows
+
+
 def _render_doctor(payload: Dict[str, Any]) -> RenderableType:
+    compatibility = payload.get("compatibility") or {}
+    auth = payload.get("auth") or {}
+    reliability = payload.get("reliability") or {}
     summary = _render_key_values(
         title="Doctor",
         rows=[
@@ -540,6 +917,9 @@ def _render_doctor(payload: Dict[str, Any]) -> RenderableType:
             ("Conflicts", str(len(payload.get("conflicts") or []))),
             ("Discovery Errors", str(len(payload.get("discovery_errors") or {}))),
             ("Plugin Conflicts", str(len(payload.get("plugin_provider_conflicts") or []))),
+            ("Compatibility", "enabled" if compatibility else "not requested"),
+            ("Auth Validation", "enabled" if auth else "not requested"),
+            ("Reliability Budgets", str(reliability.get("configured_budget_count", 0))),
         ],
     )
     checks = payload.get("checks") or []
@@ -558,10 +938,89 @@ def _render_doctor(payload: Dict[str, Any]) -> RenderableType:
             str(item.get("operation_count")),
         )
     blocks: List[RenderableType] = [summary, check_table]
+    conflicts = payload.get("conflicts") or []
+    if conflicts:
+        blocks.append(_render_single_column_table("Command Conflicts", [_compact_json(item) for item in conflicts]))
+    discovery_errors = payload.get("discovery_errors") or {}
+    if discovery_errors:
+        blocks.append(
+            _render_single_column_table(
+                "Discovery Errors",
+                [f"{name}: {_stringify(error)}" for name, error in sorted(discovery_errors.items())],
+            )
+        )
+    provider_conflicts = payload.get("plugin_provider_conflicts") or []
+    if provider_conflicts:
+        blocks.append(_render_single_column_table("Plugin Provider Conflicts", [_compact_json(item) for item in provider_conflicts]))
     if payload.get("config_paths"):
         blocks.append(_render_single_column_table("Config Paths", payload["config_paths"]))
     if payload.get("runtime_paths"):
         blocks.append(_render_key_values(title="Runtime Paths", rows=[(k, str(v)) for k, v in payload["runtime_paths"].items()]))
+    if reliability:
+        blocks.append(_render_reliability_status(reliability))
+    if compatibility:
+        blocks.append(_render_compatibility_report(compatibility))
+    if auth:
+        blocks.append(_render_auth_validation(auth))
+    return Group(*blocks)
+
+
+def _render_reliability_status(payload: Dict[str, Any]) -> RenderableType:
+    blocks: List[RenderableType] = [
+        _render_key_values(
+            title="Reliability",
+            rows=[
+                ("Configured Budgets", str(payload.get("configured_budget_count", 0))),
+                ("Defaults", "configured" if payload.get("defaults") else "none"),
+            ],
+        )
+    ]
+    defaults = payload.get("defaults") or {}
+    if defaults:
+        blocks.append(_render_key_values(title="Reliability Defaults", rows=[(k, _stringify(v)) for k, v in defaults.items()]))
+    budgets = payload.get("configured_budgets") or {}
+    if budgets:
+        table = Table(title="Reliability Budgets", box=box.SIMPLE_HEAVY)
+        table.add_column("Name", style="cyan", no_wrap=True)
+        table.add_column("Settings")
+        for name, item in sorted(budgets.items()):
+            table.add_row(name, _compact_json(item))
+        blocks.append(table)
+    status = payload.get("status") or {}
+    if status:
+        blocks.append(_render_key_values(title="Reliability Status", rows=[(k, _stringify(v)) for k, v in status.items()]))
+    return Group(*blocks)
+
+
+def _render_compatibility_report(payload: Dict[str, Any]) -> RenderableType:
+    blocks: List[RenderableType] = [
+        _render_key_values(
+            title="Compatibility",
+            rows=[
+                ("OK", str(payload.get("ok"))),
+                ("Errors", str(payload.get("error_count", 0))),
+                ("Warnings", str(payload.get("warning_count", 0))),
+            ],
+        )
+    ]
+    issues = payload.get("issues") or []
+    if issues:
+        table = Table(title="Compatibility Issues", box=box.SIMPLE_HEAVY)
+        table.add_column("Level", no_wrap=True)
+        table.add_column("Category", style="yellow", no_wrap=True)
+        table.add_column("Object", no_wrap=True)
+        table.add_column("Message")
+        table.add_column("Suggestion")
+        for item in issues:
+            object_name = item.get("object_name") or item.get("object_type") or "-"
+            table.add_row(
+                item.get("level") or "-",
+                item.get("category") or "-",
+                object_name,
+                item.get("message") or "-",
+                item.get("suggestion") or "-",
+            )
+        blocks.append(table)
     return Group(*blocks)
 
 
@@ -604,6 +1063,9 @@ def _render_auth_profile(payload: Dict[str, Any]) -> RenderableType:
     status = payload.get("status") or {}
     if status:
         blocks.append(_render_key_values(title="Status", rows=[(k, _stringify(v)) for k, v in status.items()]))
+    next_commands = payload.get("next_commands") or []
+    if next_commands:
+        blocks.append(_render_single_column_table("Next Suggested Command", next_commands))
     return Group(*blocks)
 
 
@@ -621,6 +1083,9 @@ def _render_secret_detail(payload: Dict[str, Any]) -> RenderableType:
     metadata = payload.get("metadata") or {}
     if metadata:
         blocks.append(_render_key_values(title="Metadata", rows=[(k, _stringify(v)) for k, v in metadata.items()]))
+    next_commands = payload.get("next_commands") or []
+    if next_commands:
+        blocks.append(_render_single_column_table("Next Suggested Command", next_commands))
     return Group(*blocks)
 
 

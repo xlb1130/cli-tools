@@ -149,23 +149,24 @@ class MCPCLIProvider:
                 metadata={"provider_type": self.provider_type},
             )
 
-        completed = subprocess.run(
-            plan.rendered_request["argv"],
-            capture_output=True,
-            text=True,
-            timeout=request.timeout_seconds or source_config.reliability.get("timeout_seconds"),
-            check=False,
-        )
-
-        if completed.returncode != 0:
-            error_text = completed.stderr.strip() or completed.stdout.strip() or "MCP command failed"
-            raise ProviderError(error_text)
-
-        parsed = _parse_json_output(completed.stdout)
-        if plan.rendered_request["strategy"] == "node-bridge":
-            data = parsed.get("result") if isinstance(parsed, dict) and parsed.get("ok") else parsed
-        else:
-            data = parsed
+        timeout_seconds = request.timeout_seconds or source_config.reliability.get("timeout_seconds")
+        try:
+            data = _invoke_command(plan.rendered_request["argv"], plan.rendered_request["strategy"], timeout_seconds)
+            strategy_used = plan.rendered_request["strategy"]
+            argv_used = plan.rendered_request["argv"]
+        except ProviderError as exc:
+            if not _should_retry_with_bridge(plan.rendered_request["strategy"], str(exc)):
+                raise
+            bridge_argv = _build_bridge_argv(
+                source_config,
+                app,
+                plan.rendered_request.get("primitive_type"),
+                plan.rendered_request.get("target"),
+                plan.rendered_request.get("args") or {},
+            )
+            data = _invoke_command(bridge_argv, "node-bridge", timeout_seconds)
+            strategy_used = "node-bridge"
+            argv_used = bridge_argv
 
         return InvokeResult(
             ok=True,
@@ -173,8 +174,8 @@ class MCPCLIProvider:
             data=data,
             metadata={
                 "provider_type": self.provider_type,
-                "argv": plan.rendered_request["argv"],
-                "strategy": plan.rendered_request["strategy"],
+                "argv": argv_used,
+                "strategy": strategy_used,
                 "transport_type": plan.rendered_request.get("transport_type"),
             },
         )
@@ -484,6 +485,41 @@ def _parse_json_output(output: str) -> Dict[str, Any]:
         return json.loads(output)
     except json.JSONDecodeError as exc:
         raise ProviderError(f"failed to parse JSON output from MCP command: {exc}") from exc
+
+
+def _invoke_command(argv: List[str], strategy: str, timeout_seconds: Optional[int]) -> Any:
+    completed = subprocess.run(
+        argv,
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+        check=False,
+    )
+
+    if completed.returncode != 0:
+        error_text = completed.stderr.strip() or completed.stdout.strip() or "MCP command failed"
+        raise ProviderError(error_text)
+
+    parsed = _parse_json_output(completed.stdout)
+    if strategy == "node-bridge":
+        return parsed.get("result") if isinstance(parsed, dict) and parsed.get("ok") else parsed
+    return parsed
+
+
+def _should_retry_with_bridge(strategy: str, error_text: str) -> bool:
+    if strategy != "mcp-cli":
+        return False
+
+    normalized = error_text.lower()
+    compatibility_markers = (
+        "server_not_found",
+        "server \"call-tool\" not found",
+        "server 'call-tool' not found",
+        "available servers:",
+        "use one of:",
+        "spawn call-tool enoent",
+    )
+    return any(marker in normalized for marker in compatibility_markers)
 
 
 def _kind_for_primitive(primitive_type: str) -> str:

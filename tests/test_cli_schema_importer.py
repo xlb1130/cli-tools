@@ -4,6 +4,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
+import cts.cli.root as root_module
 from cts.app import build_app
 from cts.cli.root import main
 
@@ -183,3 +184,66 @@ mounts:
     assert payload["data"]["name"] == "Alice"
     assert payload["data"]["count"] == 2
     assert payload["data"]["verbose"] is True
+
+
+def test_source_import_schema_uses_multistep_progress(tmp_path: Path, monkeypatch):
+    script_path = tmp_path / "demo_cli.py"
+    script_path.write_text(CLI_SCRIPT, encoding="utf-8")
+    manifest_path = tmp_path / "demo-schema-manifest.yaml"
+    config_path = tmp_path / "cts.yaml"
+    config_path.write_text(
+        f"""
+version: 1
+sources:
+  demo_cli:
+    type: cli
+    executable: {sys.executable}
+    discovery:
+      manifest: {manifest_path}
+mounts: []
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    captured = {}
+
+    class RecordingProgress:
+        def __init__(self, output_format, title, steps):
+            captured["title"] = title
+            captured["steps"] = list(steps)
+            captured["advanced"] = []
+
+        def __enter__(self):
+            return self
+
+        def advance(self, label=None):
+            captured["advanced"].append(label)
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(root_module, "_ProgressSteps", RecordingProgress)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "source",
+            "import-schema",
+            "demo_cli",
+            "greet",
+            str(script_path),
+            "greet",
+            "--schema-command",
+            f"{sys.executable} {script_path} schema-greet",
+            "--format",
+            "text",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["title"] == "Importing schema for 'demo_cli.greet'"
+    assert captured["steps"] == ["Read schema", "Write manifest", "Rebuild catalog"]
+    assert captured["advanced"] == ["Reading schema", "Writing manifest", "Rebuilding catalog"]
