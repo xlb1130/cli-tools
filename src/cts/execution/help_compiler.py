@@ -77,7 +77,7 @@ def build_click_params(mount: Any) -> List[click.Parameter]:
         if property_type == "array":
             click_type = _schema_to_click_type(item_type, enum)
             option = click.Option(
-                [option_name],
+                _build_option_decls(option_name, name),
                 multiple=True,
                 type=click_type,
                 help=help_text,
@@ -88,14 +88,14 @@ def build_click_params(mount: Any) -> List[click.Parameter]:
             continue
 
         if property_type == "boolean":
-            option = click.Option([option_name], is_flag=True, default=None, help=help_text)
+            option = click.Option(_build_option_decls(option_name, name), is_flag=True, default=None, help=help_text)
             setattr(option, "help_group", REQUEST_PARAMETER_GROUP)
             params.append(option)
             continue
 
         click_type = _schema_to_click_type(property_type, enum)
         option = click.Option(
-            [option_name],
+            _build_option_decls(option_name, name),
             type=click_type,
             default=None if default is None else default,
             required=False,
@@ -359,3 +359,13 @@ def _param_value(param: Any, field: str, default: Any = None) -> Any:
     if isinstance(param, dict):
         return param.get(field, default)
     return getattr(param, field, default)
+
+
+def _build_option_decls(option_name: Any, param_name: str) -> List[str]:
+    if isinstance(option_name, (list, tuple)):
+        decls = [str(item) for item in option_name if str(item)]
+    else:
+        decls = [str(option_name)]
+    if not any(not decl.startswith("-") for decl in decls):
+        decls.append(param_name)
+    return decls

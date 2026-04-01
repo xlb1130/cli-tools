@@ -2,6 +2,7 @@ import json
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import click
@@ -12,6 +13,7 @@ from cts.cli.command_registry import should_load_drift_governance
 import cts.cli.root as root_module
 from cts.app import build_app
 from cts.cli.root import main
+from cts.execution.help_compiler import build_click_params, extract_request_args
 
 
 CLI_SCRIPT = """
@@ -766,6 +768,49 @@ def test_run_mount_command_can_reuse_outer_elapsed_timer(monkeypatch):
     )
 
     assert seen["run"]["metadata"]["duration_ms"] == 3200
+
+
+def test_dynamic_click_params_preserve_camel_case_argument_names():
+    mount = SimpleNamespace(
+        operation=SimpleNamespace(
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "organizationId": {"type": "string"},
+                    "perPage": {"type": "integer"},
+                    "orderBy": {"type": "string"},
+                },
+                "required": ["organizationId"],
+            }
+        ),
+        mount_config=None,
+    )
+
+    command = click.Command(
+        "demo",
+        params=build_click_params(mount),
+        callback=lambda **kwargs: click.echo(json.dumps(extract_request_args(kwargs)[0], sort_keys=True)),
+    )
+
+    result = CliRunner().invoke(
+        command,
+        [
+            "--organizationId",
+            "org-1",
+            "--perPage",
+            "30",
+            "--orderBy",
+            "created_at",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload == {
+        "organizationId": "org-1",
+        "orderBy": "created_at",
+        "perPage": 30,
+    }
 
 
 def test_should_load_drift_governance_skips_auth_and_runs_commands():

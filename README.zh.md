@@ -6,6 +6,98 @@
 
 你可以把本地 CLI、Shell、HTTP API、OpenAPI、GraphQL、MCP Server 编译成一套一致的命令入口，再通过 CLI、invoke、HTTP、UI 暴露出来。
 
+## 能解决什么问题？
+
+很多团队手里已经有一堆可用能力，但它们往往分散在不同形态里：
+
+- 有些是本地 CLI
+- 有些是 Shell 脚本
+- 有些是 HTTP / OpenAPI / GraphQL 接口
+- 有些是 MCP Server
+
+问题通常不是“能力不够”，而是：
+
+- 入口太散，不好记，也不好教给别人用
+- 自动化脚本越写越多，参数和调用方式越来越不统一
+- AI 能调工具，但很难稳定地调对
+- 同一套能力很难同时给 CLI、HTTP、UI、MCP 复用
+
+`cts` 解决的是“把这些零散能力编译成一套稳定命令系统”。
+
+你可以用它来做这些事：
+
+- 把一个本地命令快速包成稳定 CLI
+- 把一组 HTTP / OpenAPI / GraphQL 接口统一成可调用命令
+- 把 MCP tools 编译成清晰的命令树
+- 给 AI 提供更稳定、更可治理的工具入口
+- 把同一套能力同时暴露给人、脚本、服务和 AI
+
+典型场景包括：
+
+- 研发工具统一入口
+- 运维排障与发布自动化
+- 行程规划、搜索编排这类多工具协作场景
+- 公司内部平台能力的标准化封装
+
+### 高阶场景 1：行程规划
+
+将高德 MCP、12306 MCP、必应搜索 MCP 组合成一套"出行规划助手"。
+
+**解决的问题：**
+单独使用地图、铁路、搜索都能回答一部分问题，但行程规划通常需要把它们串起来：
+- 用高德 MCP 判断城市内地点、距离、通勤时长
+- 用 12306 MCP 查询跨城车次、出发时间、换乘成本
+- 用必应搜索 MCP 补充景点信息、开放时间、注意事项
+
+**推荐工具组合：**
+- `map`：高德 MCP → 地点检索、路线规划
+- `rail`：12306 MCP → 车次、余票、换乘方案
+- `search`：必应搜索 MCP → 景点、天气、攻略
+
+**适合场景：**
+- 周末短途出行
+- 跨城高铁+地铁接驳
+- 多景点一日游
+- 商务出差路线规划
+
+详细文档：[高阶实战：行程规划](docs/usage/12-travel-planning/README.md)
+
+### 高阶场景 2：自动问题分析、自动需求开发与自动部署
+
+将多个 MCP 工具串成一条可持续运行的工程链路：出问题时自动分析，需求来了后自动生成开发上下文，开发完成后自动部署并验证。
+
+**解决的问题：**
+覆盖研发交付里最常见的几个面：
+- `aliyun-sls`：日志检索、错误定位、时间窗口分析
+- `mysql`：业务数据核对、异常样本抽取、发布后数据验证
+- `redis`：缓存、队列、限流、会话类问题排查
+- `nacos`：配置中心、服务注册、环境差异检查
+- `jvm-mcp-server`：远程 JVM / Arthas 诊断
+- `yunxiao`：需求、任务、研发协作、代码流程联动
+- `jenkins-mcp`：构建、部署、回滚、流水线状态检查
+- `dingding-bot`：任务完成通知、关键节点播报、异常升级提醒
+
+**推荐四条自动化链路：**
+
+1. **自动问题分析**
+   - 查日志 → 抽数据 → 检缓存 → 查配置 → JVM诊断 → 回写问题单 → 发通知
+
+2. **自动需求开发辅助**
+   - 读取需求 → 补齐现状上下文 → 输出技术方案 → 回写子任务 → 发通知
+
+3. **自动部署与发布验证**
+   - 配置检查 → 触发发布 → 验证日志/数据/缓存 → 回写状态 → 发通知
+
+4. **任务完成或关键节点自动通知**
+   - 判断通知条件 → 聚合上下文 → 生成通知 → 发送钉钉
+
+**推荐落地顺序：**
+1. 先接 `aliyun-sls + mysql + nacos`，跑通"自动问题分析"
+2. 再接 `yunxiao`，跑通"自动生成问题单/需求任务"
+3. 最后接 `jenkins + redis + jvm-mcp-server`，做"自动部署与发布验证"
+
+详细文档：[高阶实战：自动问题分析、自动需求开发与自动部署](docs/usage/13-advanced-automation/README.md)
+
 ## 建议学习路径
 
 如果你是第一次接触 `cts`，建议按这个顺序：
@@ -25,8 +117,8 @@
 - [OpenAPI](docs/usage/05-openapi/README.md)
 - [GraphQL](docs/usage/06-graphql/README.md)
 - [MCP Server](docs/usage/07-mcp/README.md)
-- [高阶实战：行程规划](docs/usage/13-travel-planning/README.md)
-- [高阶实战：自动问题分析、自动需求开发与自动部署](docs/usage/12-advanced-automation/README.md)
+- [高阶实战：行程规划](docs/usage/12-travel-planning/README.md)
+- [高阶实战：自动问题分析、自动需求开发与自动部署](docs/usage/13-advanced-automation/README.md)
 - [Mount 设计](docs/usage/08-mounts/README.md)
 - [执行方式](docs/usage/09-execution/README.md)
 - [Plugin](docs/usage/10-plugins/README.md)
