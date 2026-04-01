@@ -109,6 +109,31 @@ cd cli-tools
 pip install -e .
 ```
 
+### MCP 依赖
+
+如需使用 MCP (Model Context Protocol) 功能，需要额外安装以下依赖：
+
+**1. Node.js 和 npm**（MCP bridge 必需）：
+
+```bash
+# macOS (使用 Homebrew)
+brew install node
+
+# 或使用 nvm（推荐）
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+nvm install --lts
+```
+
+首次使用 MCP 功能时，bridge 会自动安装 `@modelcontextprotocol/sdk`。
+
+**2. mcp-cli**（可选，为 stdio/SSE 类型 MCP server 提供更好的性能）：
+
+```bash
+npm install -g @wonderwhy/mcp-cli
+```
+
+`mcp-cli` 是一个可选适配器，提供原生命令行访问 MCP server 的能力。如果未安装，CTS 会自动回退到 Node.js bridge。
+
 ## Provider 驱动的导入入口
 
 现在的 `cts import` 已经统一为 provider 驱动模型：

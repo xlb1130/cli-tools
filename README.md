@@ -50,6 +50,31 @@ cd cli-tools
 pip install -e .
 ```
 
+### MCP Dependencies
+
+To use MCP (Model Context Protocol) features, you need additional dependencies:
+
+**1. Node.js and npm** (required for MCP bridge):
+
+```bash
+# macOS (using Homebrew)
+brew install node
+
+# Or using nvm (recommended)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+nvm install --lts
+```
+
+The MCP bridge will automatically install `@modelcontextprotocol/sdk` on first use.
+
+**2. mcp-cli** (optional, provides better performance for stdio/SSE MCP servers):
+
+```bash
+npm install -g @wonderwhy/mcp-cli
+```
+
+`mcp-cli` is an optional adapter that provides native CLI access to MCP servers. If not installed, CTS will fall back to the Node.js bridge automatically.
+
 ## Provider-Driven Import
 
 `cts import` is now provider-driven:
