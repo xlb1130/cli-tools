@@ -96,22 +96,6 @@ Built-in provider types include:
 
 Plugin-provided provider types can also expose their own import command and wizard automatically.
 
-## Command Index Warmup
-
-If your config is large or your mounted command tree is wide, you can precompile the command index:
-
-```bash
-cts manage config warm-index --format json
-```
-
-To inspect whether the current index is still valid, and which dependency files caused it to become stale:
-
-```bash
-cts manage config index-status --format json
-```
-
-When config is updated through `source`, `mount`, `alias`, or `import` commands, the command index is refreshed automatically.
-
 ## Start With A One-Line Shell Import
 
 This is the fastest starting point because it does not depend on external services or a config file you write by hand.
@@ -289,6 +273,22 @@ cts manage invoke <mount-id> --input-json '{"key":"value"}' --format json
 # Explain a mount
 cts manage explain <mount-id> --input-json '{"key":"value"}'
 ```
+
+## Command Index Warmup
+
+If your config is large or your mounted command tree is wide, you can precompile the command index:
+
+```bash
+cts manage config warm-index --format json
+```
+
+To inspect whether the current index is still valid, and which dependency files caused it to become stale:
+
+```bash
+cts manage config index-status --format json
+```
+
+When config is updated through `source`, `mount`, `alias`, or `import` commands, the command index is refreshed automatically.
 
 ## Development
 

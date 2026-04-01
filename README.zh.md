@@ -155,22 +155,6 @@ cts import wizard <provider-type>
 
 如果是 plugin 注册出来的 provider，只要它实现了 import 能力，也会自动出现在 `cts import` 和 `cts import wizard` 里。
 
-## 命令索引预热
-
-如果你的配置比较大，或者 mount / imported CLI 命令很多，可以先预编译命令索引：
-
-```bash
-cts manage config warm-index --format json
-```
-
-查看当前索引是否可用、是否因为配置文件或 manifest 变更而失效：
-
-```bash
-cts manage config index-status --format json
-```
-
-配置通过 `source` / `mount` / `alias` / `import` 等命令更新后，索引也会自动刷新。
-
 ## 第一步：先跑通一个本地 shell 命令
 
 这是最快的起点，因为不依赖外部服务，也不需要你手写配置文件。
@@ -326,6 +310,22 @@ cts manage invoke <mount-id> --input-json '{"key":"value"}' --format json
 # 解释 mount
 cts manage explain <mount-id> --input-json '{"key":"value"}'
 ```
+
+## 命令索引预热
+
+如果你的配置比较大，或者 mount / imported CLI 命令很多，可以先预编译命令索引：
+
+```bash
+cts manage config warm-index --format json
+```
+
+查看当前索引是否可用、是否因为配置文件或 manifest 变更而失效：
+
+```bash
+cts manage config index-status --format json
+```
+
+配置通过 `source` / `mount` / `alias` / `import` 等命令更新后，索引也会自动刷新。
 
 ## 开发
 
