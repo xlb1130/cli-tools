@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
+from cts.models import OperationDescriptor
 from cts.operation_select import operation_matches_select
 
 
@@ -138,6 +140,10 @@ def build_static_help_catalog(loaded) -> StaticHelpCatalog:
             if manifest_path.exists():
                 for operation in _static_manifest_operations_from_data(source_name, source_type, manifest_path):
                     operations[operation.id] = operation
+
+        if source_type == "mcp" and not operations:
+            for operation in _static_cached_snapshot_operations(source_name, loaded):
+                operations[operation.id] = operation
 
         if isinstance(source_defined_operations, dict):
             for operation_id, operation in source_defined_operations.items():
@@ -343,6 +349,73 @@ def _static_manifest_operations_from_data(source_name: str, provider_type: str, 
             )
         )
     return operations
+
+
+def _static_cached_snapshot_operations(source_name: str, loaded) -> List[StaticOperationRecord]:
+    snapshot_path = _static_source_snapshot_path(source_name, loaded)
+    if snapshot_path is None or not snapshot_path.exists():
+        return []
+
+    try:
+        payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    operations: List[StaticOperationRecord] = []
+    schema_index = payload.get("schema_index") or {}
+    for item in payload.get("operations", []):
+        if not isinstance(item, dict):
+            continue
+        try:
+            operation = OperationDescriptor.model_validate(item)
+        except Exception:
+            continue
+        schema_record = schema_index.get(operation.id) or {}
+        if schema_record.get("input_schema"):
+            operation.input_schema = dict(schema_record["input_schema"])
+        operations.append(
+            StaticOperationRecord(
+                id=operation.id,
+                source=operation.source,
+                provider_type=operation.provider_type,
+                title=operation.title,
+                stable_name=operation.stable_name,
+                description=operation.description,
+                kind=operation.kind,
+                tags=list(operation.tags),
+                group=operation.group,
+                risk=operation.risk,
+                input_schema=dict(operation.input_schema or {}),
+                output_schema=operation.output_schema,
+                examples=list(operation.examples),
+                supported_surfaces=list(operation.supported_surfaces),
+                provider_config=dict(operation.provider_config or {}),
+            )
+        )
+    return operations
+
+
+def _static_source_snapshot_path(source_name: str, loaded) -> Optional[Path]:
+    app_config = loaded.raw.get("app") or {}
+    cache_dir = _static_optional_path(app_config.get("cache_dir"), loaded)
+    return (cache_dir / "discovery" / f"{_static_safe_name(source_name)}.json").resolve()
+
+
+def _static_optional_path(raw_path: Optional[str], loaded) -> Path:
+    default = Path("~/.cache/cts").expanduser()
+    if raw_path is None:
+        return default.resolve()
+    candidate = Path(str(raw_path)).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+    if loaded.root_paths:
+        return (loaded.root_paths[-1].parent / candidate).resolve()
+    return (Path.cwd() / candidate).resolve()
+
+
+def _static_safe_name(value: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
+    return normalized or "default"
 
 
 def _static_operation_from_config(

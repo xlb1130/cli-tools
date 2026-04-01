@@ -8,6 +8,7 @@ from click.testing import CliRunner
 import click
 
 import cts.cli.root as root_module
+from cts.app import build_app
 from cts.cli.dynamic import _mount_short_help
 from cts.cli.root import main
 from cts.providers import mcp_cli
@@ -245,11 +246,23 @@ def test_import_mcp_apply_persists_source_and_mounts(tmp_path: Path, monkeypatch
     assert raw["mounts"][0]["id"] == "cn12306-query_train"
     assert raw["mounts"][0]["command"]["path"] == ["cn12306", "query_train"]
 
-    help_result = runner.invoke(main, ["--config", str(config_path), "cn12306", "--help"])
+    help_result = runner.invoke(main, ["--config", str(config_path), "cn12306", "--help"], env={"HOME": str(tmp_path)})
     assert help_result.exit_code == 0
     assert "Tools imported from MCP source 'cn12306' using server 'cn12306-server'." in help_result.output
     assert "query_train  Query train tickets" in help_result.output
     assert "Query train tickets" in help_result.output
+
+    leaf_help_result = runner.invoke(
+        main,
+        ["--config", str(config_path), "cn12306", "query_train", "--help"],
+        env={"HOME": str(tmp_path)},
+    )
+    assert leaf_help_result.exit_code == 0
+    assert "Input Schema:" in leaf_help_result.output
+    assert "from" in leaf_help_result.output
+    assert "type=string" in leaf_help_result.output
+    assert "Request Parameters:" in leaf_help_result.output
+    assert "--from TEXT" in leaf_help_result.output
 
 
 def test_import_mcp_apply_filters_mounts_with_include_and_exclude(tmp_path: Path, monkeypatch):

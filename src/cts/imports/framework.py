@@ -214,7 +214,8 @@ def _execute_generic_plan(
             )
         if plan.provider_type == "mcp":
             group_help = _mcp_group_help_from_post_results(plan.source_name, updated.get("sources", {}).get(plan.source_name, {}), post_results)
-            if group_help is not None:
+            source_operations = _mcp_source_operations_from_app(compiled_app, plan.source_name) if compiled_app is not None else {}
+            if group_help is not None or source_operations:
                 source_session = prepare_edit_session(state.config_path, target_file=session.target_path)
 
                 def source_mutator(payload: Dict[str, Any]) -> None:
@@ -222,7 +223,10 @@ def _execute_generic_plan(
                     source_payload = payload["sources"].get(plan.source_name)
                     if not isinstance(source_payload, dict):
                         return
-                    source_payload["imported_cli_groups"] = [group_help]
+                    if group_help is not None:
+                        source_payload["imported_cli_groups"] = [group_help]
+                    if source_operations:
+                        source_payload["operations"] = source_operations
 
                 updated, compiled_app = apply_update(
                     source_session,
@@ -450,3 +454,22 @@ def _mcp_group_help_from_post_results(
         discovery = sync_items[0] if sync_items else None
         return build_mcp_group_help_from_discovery(source_name, {"server": server_name}, discovery)
     return None
+
+
+def _mcp_source_operations_from_app(app: Any, source_name: str) -> Dict[str, Any]:
+    operations: Dict[str, Any] = {}
+    for operation_id, operation in (app.source_operations.get(source_name, {}) if app is not None else {}).items():
+        operations[operation_id] = {
+            "title": operation.title,
+            "description": operation.description,
+            "kind": operation.kind,
+            "risk": operation.risk,
+            "tags": list(operation.tags),
+            "group": operation.group,
+            "input_schema": dict(operation.input_schema or {}),
+            "output_schema": operation.output_schema,
+            "examples": list(operation.examples),
+            "supported_surfaces": list(operation.supported_surfaces),
+            "provider_config": dict(operation.provider_config or {}),
+        }
+    return operations

@@ -196,64 +196,27 @@ cts manage serve http --ui --open
 
 ## Typical Scenarios
 
-### Scenario 1: Travel Planning
+**Why Unified CLI Matters:**
 
-Combine Gaode MCP, 12306 MCP, and Bing Search MCP into a comprehensive "travel planning assistant".
+- **Stable interface**: Mount bindings create predictable command paths—AI and scripts don't need to guess tool names or parameters
+- **Multi-surface access**: One import exposes capabilities through CLI, HTTP, UI, and MCP simultaneously
+- **Cross-provider consistency**: MCP tools, OpenAPI endpoints, local CLIs, and shell scripts all become first-class commands
+- **Governance built-in**: Hooks for logging, auth, rate limiting, approval workflows—applied uniformly across all sources
 
-**Problem Solved:**
-While maps, railways, and search can each answer part of the question, travel planning usually requires chaining them together:
-- Gaode MCP for location search, route planning, and commute time estimation
-- 12306 MCP for train schedules, ticket availability, and transfer options
-- Bing Search MCP for attraction info, opening hours, and travel tips
+**CTS vs Traditional Multi-MCP Configuration:**
 
-**Recommended Tool Combination:**
-- `map`: Gaode MCP → location search, route planning
-- `rail`: 12306 MCP → train schedules, ticket availability, transfer options
-- `search`: Bing Search MCP → attractions, weather, travel guides
+| Aspect | Traditional Multi-MCP | CTS |
+|--------|----------------------|-----|
+| Configuration | Per-client config files | Centralized import & mount management |
+| Access channels | MCP only | CLI, HTTP, UI, MCP in parallel |
+| Script integration | Not available | `cts invoke` or HTTP API |
+| Governance | Ad-hoc per client | Hooks, plugins, execution history |
+| Reusability | Duplicate for each client | Import once, use everywhere |
 
-**Use Cases:**
-- Weekend short trips
-- Intercity high-speed rail + subway connections
-- Multi-attraction day trips
-- Business travel route planning
+**High-Level Scenarios:**
 
-Detailed documentation: [Advanced Practice: Travel Planning](docs/usage/12-travel-planning/README.md)
-
-### Scenario 2: Automated Issue Analysis, Requirement Development, and Deployment
-
-Chain multiple MCP tools into a sustainable engineering pipeline: automatic issue analysis when problems occur, automatic development context generation when requirements come in, and automatic deployment and verification after development.
-
-**Problem Solved:**
-Covers the most common aspects of R&D delivery:
-- `aliyun-sls`: Log retrieval, error localization, time window analysis
-- `mysql`: Business data verification, exception sampling, post-release data validation
-- `redis`: Cache, queue, rate limiting, session troubleshooting
-- `nacos`: Configuration center, service registry, environment difference checking
-- `jvm-mcp-server`: Remote JVM / Arthas diagnostics
-- `yunxiao`: Requirements, tasks, R&D collaboration, code workflow integration
-- `jenkins-mcp`: Build, deploy, rollback, pipeline status checking
-- `dingding-bot`: Task completion notifications, key node broadcasts, exception escalation alerts
-
-**Recommended Four Automation Pipelines:**
-
-1. **Automated Issue Analysis**
-   - Check logs → Extract data → Check cache → Check config → JVM diagnosis → Update issue → Send notification
-
-2. **Automated Requirement Development Assistance**
-   - Read requirements → Supplement context → Output technical solution → Update subtasks → Send notification
-
-3. **Automated Deployment and Release Verification**
-   - Config check → Trigger deployment → Verify logs/data/cache → Update status → Send notification
-
-4. **Task Completion or Key Node Automated Notification**
-   - Determine notification conditions → Aggregate context → Generate notification → Send DingTalk
-
-**Recommended Implementation Order:**
-1. First connect `aliyun-sls + mysql + nacos`, complete "automated issue analysis"
-2. Then connect `yunxiao`, complete "automated issue/requirement task generation"
-3. Finally connect `jenkins + redis + jvm-mcp-server`, complete "automated deployment and release verification"
-
-Detailed documentation: [Advanced Practice: Automated Issue Analysis, Requirement Development, and Deployment](docs/usage/13-advanced-automation/README.md)
+- [Travel Planning](docs/usage/12-travel-planning/README.md): Combine Gaode, 12306, and Bing MCPs with unified command access
+- [Automated Issue Analysis & Deployment](docs/usage/13-advanced-automation/README.md): Chain logs, DB, deploy, and notification tools with governance hooks
 
 ## Core Model
 

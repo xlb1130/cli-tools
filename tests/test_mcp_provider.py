@@ -38,10 +38,10 @@ def test_bridge_launch_script_path_bootstraps_runtime(tmp_path: Path, monkeypatc
     runtime_dir = tmp_path / "runtime"
     calls = []
 
-    def fake_run(argv, cwd, capture_output, text, check):
+    def fake_run(argv, cwd, capture_output, text, timeout, check):
         calls.append((argv, Path(cwd)))
         (Path(cwd) / "node_modules" / "@modelcontextprotocol" / "sdk").mkdir(parents=True, exist_ok=True)
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
+        return SimpleNamespace(args=argv, returncode=0, stdout=b"", stderr=b"")
 
     monkeypatch.setattr(mcp_cli, "_bridge_script_path", lambda: script_path)
     monkeypatch.setattr(mcp_cli, "_bridge_runtime_root", lambda: runtime_dir)
@@ -233,18 +233,20 @@ mounts: []
     provider = mcp_cli.MCPCLIProvider()
     calls = []
 
-    def fake_run(argv, capture_output, text, timeout, check):
+    def fake_run(argv, cwd=None, capture_output=True, text=False, timeout=None, check=False):
         calls.append(list(argv))
         if argv[0] == "mcp-cli":
             return SimpleNamespace(
+                args=argv,
                 returncode=1,
-                stdout="",
-                stderr='Error [SERVER_NOT_FOUND]: Server "call-tool" not found in config\nAvailable servers: demo',
+                stdout=b"",
+                stderr=b'Error [SERVER_NOT_FOUND]: Server "call-tool" not found in config\nAvailable servers: demo',
             )
         return SimpleNamespace(
+            args=argv,
             returncode=0,
-            stdout='{"ok": true, "result": {"items": [1, 2, 3]}}\n',
-            stderr="",
+            stdout=b'{"ok": true, "result": {"items": [1, 2, 3]}}\n',
+            stderr=b"",
         )
 
     monkeypatch.setattr(mcp_cli.subprocess, "run", fake_run)
@@ -263,3 +265,10 @@ mounts: []
     assert result.metadata["strategy"] == "node-bridge"
     assert calls[0][:4] == ["mcp-cli", "-c", str(servers_path), "call-tool"]
     assert calls[1] == ["node", "bridge.mjs", "call-tool"]
+
+
+def test_decode_subprocess_output_prefers_utf8_over_windows_gbk():
+    text = "MCP 返回了 UTF-8 字符和符号 ®"
+    payload = text.encode("utf-8")
+
+    assert mcp_cli._decode_subprocess_output(payload) == text

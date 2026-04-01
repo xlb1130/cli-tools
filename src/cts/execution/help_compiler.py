@@ -195,6 +195,10 @@ def compile_command_help(
     if notes:
         long_help_parts.append("Notes:\n" + "\n".join(f"- {note}" for note in notes))
 
+    input_schema = compile_input_schema(mount)
+    schema_rows = _input_schema_rows(input_schema)
+    schema_body = _input_schema_body(input_schema, schema_rows)
+
     epilog_parts = []
     if examples:
         epilog_parts.append("Examples:\n" + "\n".join(examples))
@@ -209,6 +213,8 @@ def compile_command_help(
         "description": description,
         "detail_rows": detail_rows,
         "note_rows": [("Note", note) for note in notes],
+        "schema_rows": schema_rows,
+        "schema_body": schema_body,
         "example_rows": [("Example", example) for example in examples],
         "reference_rows": [
             ("Stable mount id", mount.mount_id),
@@ -244,6 +250,72 @@ def _build_help_text(
     if help_text:
         return help_text + " [" + "; ".join(suffix) + "]"
     return "[" + "; ".join(suffix) + "]"
+
+
+def _input_schema_rows(schema: Dict[str, Any]) -> List[Tuple[str, str]]:
+    properties = dict(schema.get("properties") or {})
+    required = set(schema.get("required") or [])
+    rows: List[Tuple[str, str]] = []
+    for name, property_schema in properties.items():
+        rows.extend(_describe_schema_property(name, property_schema, required=name in required))
+    return rows
+
+
+def _describe_schema_property(name: str, property_schema: Dict[str, Any], *, required: bool) -> List[Tuple[str, str]]:
+    rows: List[Tuple[str, str]] = []
+    schema_type = str(property_schema.get("type") or "string")
+    details = [f"type={schema_type}"]
+    if required:
+        details.append("required")
+    if property_schema.get("default") is not None:
+        details.append(f"default={property_schema['default']}")
+    enum = property_schema.get("enum") or []
+    if enum:
+        details.append("enum=" + ",".join(str(item) for item in enum))
+    description = str(property_schema.get("description") or "").strip()
+    if description:
+        details.append(description)
+    rows.append((name, "; ".join(details)))
+
+    if schema_type == "object":
+        nested_required = set(property_schema.get("required") or [])
+        for child_name, child_schema in dict(property_schema.get("properties") or {}).items():
+            rows.extend(
+                _describe_schema_property(
+                    f"{name}.{child_name}",
+                    child_schema,
+                    required=child_name in nested_required,
+                )
+            )
+    elif schema_type == "array":
+        item_schema = dict(property_schema.get("items") or {})
+        item_type = str(item_schema.get("type") or "string")
+        item_details = [f"type={item_type}"]
+        item_description = str(item_schema.get("description") or "").strip()
+        if item_description:
+            item_details.append(item_description)
+        if item_type == "object":
+            item_details.append("repeatable item")
+        rows.append((f"{name}[]", "; ".join(item_details)))
+        if item_type == "object":
+            nested_required = set(item_schema.get("required") or [])
+            for child_name, child_schema in dict(item_schema.get("properties") or {}).items():
+                rows.extend(
+                    _describe_schema_property(
+                        f"{name}[].{child_name}",
+                        child_schema,
+                        required=child_name in nested_required,
+                    )
+                )
+    return rows
+
+
+def _input_schema_body(schema: Dict[str, Any], rows: List[Tuple[str, str]]) -> Optional[str]:
+    if not rows:
+        return None
+    if any(str((schema.get("properties") or {}).get(name, {}).get("type")) in {"object", "array"} for name, _ in rows if "." not in name and "[]" not in name):
+        return "Nested object or array payloads are clearer with --input-json or --input-file."
+    return None
 
 
 def _schema_provenance_notes(schema_provenance: Optional[Dict[str, Any]]) -> List[str]:

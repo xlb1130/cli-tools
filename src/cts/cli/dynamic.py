@@ -87,11 +87,20 @@ class GroupedOptionCommand(click.Command):
 
 
 class DirectPathGroup(click.Group):
-    def __init__(self, *args, path_prefix=None, target_mount=None, callback_factory: Optional[Callable[[Any], Callable]] = None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        path_prefix=None,
+        target_mount=None,
+        callback_factory: Optional[Callable[[Any], Callable]] = None,
+        runtime_command_factory: Optional[Callable[[click.Context, tuple[str, ...], Any], Optional[click.Command]]] = None,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.path_prefix = tuple(path_prefix or ())
         self.target_mount = target_mount
         self.callback_factory = callback_factory
+        self.runtime_command_factory = runtime_command_factory
 
     def list_commands(self, ctx):
         target_path = tuple(self.target_mount.command_path)
@@ -110,9 +119,14 @@ class DirectPathGroup(click.Group):
                 path_prefix=next_prefix,
                 target_mount=self.target_mount,
                 callback_factory=self.callback_factory,
+                runtime_command_factory=self.runtime_command_factory,
                 help="Dynamic command group for " + " ".join(next_prefix),
                 no_args_is_help=True,
             )
+        if self.runtime_command_factory is not None:
+            runtime_command = self.runtime_command_factory(ctx, next_prefix, self.target_mount)
+            if runtime_command is not None:
+                return runtime_command
         return build_static_help_command(self.target_mount, callback=self.callback_factory(self.target_mount))
 
 
@@ -139,6 +153,7 @@ def build_static_help_command(mount: Any, callback: Callable) -> click.Command:
     command.help_sections = [
         {"title": "Details", "rows": help_content["detail_rows"]},
         {"title": "Notes", "rows": help_content["note_rows"]},
+        {"title": "Input Schema", "rows": help_content["schema_rows"], "body": help_content.get("schema_body")},
     ]
     command.help_epilog_sections = [
         {"title": "Examples", "rows": help_content["example_rows"]},
@@ -219,6 +234,7 @@ class LazyDynamicCommand(GroupedOptionCommand):
         self.help_sections = [
             {"title": "Details", "rows": help_payload.get("detail_rows") or []},
             {"title": "Notes", "rows": help_payload.get("note_rows") or []},
+            {"title": "Input Schema", "rows": help_payload.get("schema_rows") or [], "body": help_payload.get("schema_body")},
         ]
         self.help_epilog_sections = [
             {"title": "Examples", "rows": help_payload.get("example_rows") or []},

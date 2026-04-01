@@ -159,6 +159,13 @@ mounts:
     assert "GraphQL schema:" in normalized_help_output
     assert "authoritative" in normalized_help_output
 
+    create_post_help = runner.invoke(main, ["--config", str(config_path), "gql", "create", "post", "--help"])
+    assert create_post_help.exit_code == 0
+    assert "Input Schema:" in create_post_help.output
+    assert "input.title" in create_post_help.output
+    assert "--input-json TEXT" in create_post_help.output
+    assert "Nested object or array payloads are clearer with --input-json or --input-file." in create_post_help.output
+
     inspect_result = runner.invoke(
         main,
         ["--config", str(config_path), "manage", "inspect", "operation", "github_graphql", "viewer", "--format", "json"],

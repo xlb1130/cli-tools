@@ -155,9 +155,13 @@ class CatalogBackedGroup(click.Group):
                         path_prefix=next_prefix,
                         target_mount=direct_mount,
                         callback_factory=_dynamic_callback,
+                        runtime_command_factory=_build_runtime_help_command,
                         help="Dynamic command group for " + " ".join(next_prefix),
                         no_args_is_help=True,
                     )
+                runtime_command = _build_runtime_help_command(ctx, next_prefix, direct_mount)
+                if runtime_command is not None:
+                    return runtime_command
                 return build_static_help_command(direct_mount, callback=_dynamic_callback(direct_mount))
 
         if not self.dynamic_only:
@@ -204,6 +208,25 @@ class CatalogBackedGroup(click.Group):
                 no_args_is_help=True,
             )
         return None
+
+
+def _static_help_needs_runtime_fallback(mount: Any) -> bool:
+    input_schema = getattr(getattr(mount, "operation", None), "input_schema", None) or {}
+    properties = input_schema.get("properties") if isinstance(input_schema, dict) else None
+    return not bool(properties)
+
+
+def _build_runtime_help_command(ctx: click.Context, command_path: tuple[str, ...], mount: Any):
+    if not _static_help_needs_runtime_fallback(mount):
+        return None
+    try:
+        app = _get_app(ctx, mode="full")
+    except Exception as exc:
+        return _support_build_error_command(command_path[-1], exc, fail=lambda inner_ctx, inner_exc, stage, output_format: _fail(inner_ctx, inner_exc, stage, output_format))
+    runtime_mount = app.catalog.find_by_path(list(command_path))
+    if runtime_mount is None:
+        return None
+    return build_dynamic_command(app, runtime_mount, callback=_dynamic_callback(runtime_mount))
 
 
 @click.group(

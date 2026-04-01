@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import locale
 import shlex
 import shutil
 import subprocess
@@ -428,13 +429,7 @@ def _run_bridge_command(
     timeout_seconds: Optional[int] = None,
 ) -> Dict[str, Any]:
     argv = _build_bridge_argv(source_config, app, primitive_type, target, args or {}, command=command)
-    completed = subprocess.run(
-        argv,
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-        check=False,
-    )
+    completed = _run_command(argv, timeout_seconds=timeout_seconds)
     if completed.returncode != 0:
         error_text = completed.stderr.strip() or completed.stdout.strip() or "MCP bridge command failed"
         raise ProviderError(error_text)
@@ -626,12 +621,9 @@ def _ensure_bridge_runtime(script_path: Path, runtime_dir: Path) -> Path:
             raise ProviderError(
                 "MCP bridge requires npm to auto-install '@modelcontextprotocol/sdk', but npm was not found in PATH"
             )
-        completed = subprocess.run(
+        completed = _run_command(
             [npm, "install", "--no-audit", "--no-fund", "--omit=dev"],
             cwd=runtime_dir,
-            capture_output=True,
-            text=True,
-            check=False,
         )
         if completed.returncode != 0:
             error_text = completed.stderr.strip() or completed.stdout.strip() or "npm install failed for MCP bridge runtime"
@@ -670,13 +662,7 @@ def _parse_json_output(output: str) -> Dict[str, Any]:
 
 
 def _invoke_command(argv: List[str], strategy: str, timeout_seconds: Optional[int]) -> Any:
-    completed = subprocess.run(
-        argv,
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-        check=False,
-    )
+    completed = _run_command(argv, timeout_seconds=timeout_seconds)
 
     if completed.returncode != 0:
         error_text = completed.stderr.strip() or completed.stdout.strip() or "MCP command failed"
@@ -714,6 +700,43 @@ def _kind_for_primitive(primitive_type: str) -> str:
 
 def _sanitize_identifier(value: str) -> str:
     return value.replace("://", "_").replace("/", "_").replace(":", "_").replace(".", "_").replace("-", "_")
+
+
+def _run_command(
+    argv: List[str],
+    *,
+    cwd: Optional[Path] = None,
+    timeout_seconds: Optional[int] = None,
+) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(
+        argv,
+        cwd=str(cwd) if cwd is not None else None,
+        capture_output=True,
+        text=False,
+        timeout=timeout_seconds,
+        check=False,
+    )
+    return subprocess.CompletedProcess(
+        completed.args,
+        completed.returncode,
+        _decode_subprocess_output(completed.stdout),
+        _decode_subprocess_output(completed.stderr),
+    )
+
+
+def _decode_subprocess_output(payload: Optional[bytes]) -> str:
+    if payload is None:
+        return ""
+    if not payload:
+        return ""
+
+    preferred_encoding = locale.getpreferredencoding(False) or "utf-8"
+    for encoding in ("utf-8", preferred_encoding, "gb18030"):
+        try:
+            return payload.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return payload.decode("utf-8", errors="replace")
 
 
 def _should_use_live_discovery(source_config: SourceConfig) -> bool:

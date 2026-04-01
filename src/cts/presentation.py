@@ -340,6 +340,8 @@ def build_mount_help(app, mount) -> Dict[str, Any]:
         "epilog": help_content["epilog"],
         "detail_rows": help_content["detail_rows"],
         "note_rows": help_content["note_rows"],
+        "schema_rows": help_content["schema_rows"],
+        "schema_body": help_content["schema_body"],
         "example_rows": help_content["example_rows"],
         "reference_rows": help_content["reference_rows"],
         "risk": mount.operation.risk,
