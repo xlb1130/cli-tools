@@ -99,6 +99,7 @@ def apply_update(
                     raise ConfigEditError(
                         "新增配置引入了命令冲突: " + "; ".join(sorted(introduced))
                     )
+        _refresh_command_index(validation_reference)
         return updated, compiled_app
     except Exception:
         _restore_original(session.target_path, original_text)
@@ -252,3 +253,14 @@ def _restore_original(path: Path, original_text: Optional[str]) -> None:
             path.unlink()
         return
     path.write_text(original_text, encoding="utf-8")
+
+
+def _refresh_command_index(validation_reference: Optional[str]) -> None:
+    try:
+        from cts.cli.command_index import rebuild_command_index
+
+        rebuild_command_index(validation_reference)
+    except Exception:
+        # Best effort only. If refresh fails, the index will naturally miss on next use
+        # because the underlying config timestamps changed.
+        return

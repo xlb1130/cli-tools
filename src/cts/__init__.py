@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import re
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from typing import Final
 
 __all__ = ["__version__"]
+
+_UNSET: Final = object()
+_version_cache: object = _UNSET
 
 
 def _read_pyproject_version() -> str:
@@ -22,9 +27,20 @@ def _resolve_version() -> str:
         return local_version
 
     try:
+        from importlib.metadata import PackageNotFoundError, version
+    except ModuleNotFoundError:
+        return "0.0.0"
+
+    try:
         return version("cts")
     except PackageNotFoundError:
         return "0.0.0"
 
+def __getattr__(name: str):
+    global _version_cache
 
-__version__ = _resolve_version()
+    if name != "__version__":
+        raise AttributeError(name)
+    if _version_cache is _UNSET:
+        _version_cache = _resolve_version()
+    return _version_cache

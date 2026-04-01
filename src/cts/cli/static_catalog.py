@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import asdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -99,6 +100,84 @@ class StaticMountRecord:
     mount_config: Any = None
     generated: bool = False
     generated_from: Optional[str] = None
+
+
+def serialize_static_help_catalog(catalog: StaticHelpCatalog) -> Dict[str, Any]:
+    mounts: List[Dict[str, Any]] = []
+    seen: set[tuple[str, tuple[str, ...]]] = set()
+    for mount in catalog._path_index.values():
+        key = (str(getattr(mount, "mount_id", "")), tuple(getattr(mount, "command_path", []) or []))
+        if key in seen:
+            continue
+        seen.add(key)
+        mounts.append(asdict(mount))
+
+    group_help = [
+        {
+            "path": list(path),
+            "summary": payload.get("summary"),
+            "description": payload.get("description"),
+        }
+        for path, payload in sorted(catalog._group_help.items())
+    ]
+    return {"mounts": mounts, "group_help": group_help}
+
+
+def deserialize_static_help_catalog(payload: Dict[str, Any]) -> StaticHelpCatalog:
+    catalog = StaticHelpCatalog()
+
+    for item in payload.get("mounts", []):
+        if not isinstance(item, dict):
+            continue
+        operation_raw = item.get("operation") or {}
+        if not isinstance(operation_raw, dict):
+            continue
+        operation = StaticOperationRecord(**operation_raw)
+        mount_payload = dict(item)
+        mount_payload["operation"] = operation
+        mount = StaticMountRecord(**mount_payload)
+        catalog.add_mount(mount)
+
+    for item in payload.get("group_help", []):
+        if not isinstance(item, dict):
+            continue
+        path = tuple(item.get("path") or [])
+        if not path:
+            continue
+        catalog.add_group_help(
+            path,
+            summary=item.get("summary"),
+            description=item.get("description"),
+        )
+    return catalog
+
+
+def static_catalog_dependency_paths(loaded) -> List[Path]:
+    dependencies: List[Path] = []
+    seen: set[Path] = set()
+
+    def add_path(path: Optional[Path]) -> None:
+        if path is None:
+            return
+        resolved = path.expanduser().resolve()
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        dependencies.append(resolved)
+
+    for path in getattr(loaded, "paths", []) or []:
+        add_path(path)
+
+    raw_sources = (getattr(loaded, "raw", None) or {}).get("sources") or {}
+    for source_name, source in raw_sources.items():
+        if not isinstance(source, dict) or source.get("enabled", True) is False:
+            continue
+        manifest_path = _static_manifest_path(source, loaded)
+        add_path(manifest_path)
+        source_type = str(source.get("type") or "")
+        if source_type == "mcp" and manifest_path is None:
+            add_path(_static_source_snapshot_path(str(source_name), loaded))
+    return dependencies
 
 
 def build_static_help_catalog(loaded) -> StaticHelpCatalog:
@@ -401,6 +480,22 @@ def _static_source_snapshot_path(source_name: str, loaded) -> Optional[Path]:
     return (cache_dir / "discovery" / f"{_static_safe_name(source_name)}.json").resolve()
 
 
+def _static_manifest_path(source: Dict[str, Any], loaded) -> Optional[Path]:
+    discovery = source.get("discovery") or {}
+    manifest = discovery.get("manifest") if isinstance(discovery, dict) else None
+    if not manifest:
+        return None
+    manifest_path = Path(str(manifest)).expanduser()
+    if manifest_path.is_absolute():
+        return manifest_path.resolve()
+    origin = source.get("__origin_file__") if isinstance(source, dict) else None
+    if origin:
+        return (Path(str(origin)).parent / manifest_path).resolve()
+    if loaded.root_paths:
+        return (loaded.root_paths[-1].parent / manifest_path).resolve()
+    return (Path.cwd() / manifest_path).resolve()
+
+
 def _static_optional_path(raw_path: Optional[str], loaded) -> Path:
     default = Path("~/.cache/cts").expanduser()
     if raw_path is None:
@@ -442,4 +537,3 @@ def _static_operation_from_config(
         supported_surfaces=list(operation.get("supported_surfaces", ["cli", "invoke"])),
         provider_config=provider_config,
     )
-from cts.operation_select import operation_matches_select

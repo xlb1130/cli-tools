@@ -10,9 +10,6 @@ from typing import Any, Dict, List, Optional
 
 import click
 
-from cts.cli.lazy import build_error_envelope, render_payload
-from cts.execution.errors import exit_code_for_exception
-
 
 def split_command_segments(values: tuple[str, ...] | list[str]) -> List[str]:
     tokens: List[str] = []
@@ -89,6 +86,8 @@ def path_to_str(path: Optional[Path]) -> Optional[str]:
 
 
 def serialize_error(exc: Exception, stage: str) -> Dict[str, Any]:
+    from cts.cli.lazy import build_error_envelope
+
     return build_error_envelope(exc, stage)["error"]
 
 
@@ -294,6 +293,9 @@ def fail(
     run_id: Optional[str] = None,
     trace_id: Optional[str] = None,
 ) -> None:
+    from cts.cli.lazy import build_error_envelope, render_payload
+    from cts.execution.errors import exit_code_for_exception
+
     payload = build_error_envelope(exc, stage, mount=mount, run_id=run_id, trace_id=trace_id)
     click.echo(render_payload(payload, output_format))
     ctx.exit(exit_code_for_exception(exc, stage))

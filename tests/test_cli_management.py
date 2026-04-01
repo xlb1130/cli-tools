@@ -1,4 +1,6 @@
 import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -32,6 +34,391 @@ def test_root_help_only_exposes_manage_for_admin_commands():
     assert "source      Source registry operations." not in result.output
     assert "auth        Authentication status commands." not in result.output
     assert "invoke      Invoke a mounted capability with validated input." not in result.output
+
+
+def test_importing_main_does_not_preload_import_framework():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, 'src'); import cts.main; print('cts.imports.framework' in sys.modules)",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == "False"
+
+
+def test_importing_cli_package_does_not_preload_root_module():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, 'src'); import cts.cli; print('cts.cli.root' in sys.modules)",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == "False"
+
+
+def test_importing_root_does_not_preload_importlib_metadata():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, 'src'); import cts.cli.root; print('importlib.metadata' in sys.modules)",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == "False"
+
+
+def test_importing_root_does_not_preload_builtin_command_modules():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "sys.path.insert(0, 'src'); "
+                "import cts.cli.root; "
+                "print(sorted(name for name in sys.modules if name.startswith(('cts.cli.builtins', 'cts.config.loader', 'cts.execution.errors'))))"
+            ),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == "[]"
+
+
+def test_version_flag_prints_version():
+    runner = CliRunner()
+    result = runner.invoke(main, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.output.strip() == "cts, version 0.1.1"
+
+
+def test_manage_group_loads_builtin_modules_on_demand():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "sys.path.insert(0, 'src'); "
+                "import click; "
+                "import cts.cli.root as root; "
+                "root.manage.list_commands(click.Context(root.manage)); "
+                "print(sorted(name for name in sys.modules if name.startswith('cts.cli.builtins')))"
+            ),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    loaded = result.stdout.strip()
+    assert "cts.cli.builtins.catalog_workflow" in loaded
+    assert "cts.cli.builtins.config" in loaded
+    assert "cts.cli.builtins.execution_ops" in loaded
+    assert "cts.cli.builtins.runtime_admin" in loaded
+    assert "cts.cli.builtins.surfaces" in loaded
+
+
+def test_command_index_round_trip_for_static_catalog(tmp_path: Path, monkeypatch):
+    source_root = Path(__file__).resolve().parents[1] / "examples" / "split-demo"
+    workspace = tmp_path / "split-demo"
+    shutil.copytree(source_root, workspace)
+    config_path = workspace / "cts.yaml"
+    monkeypatch.setenv("CTS_CLI_INDEX_DIR", str(tmp_path / "cli-index"))
+
+    from cts.cli.command_index import load_command_index, resolve_command_index_path, write_command_index
+    from cts.cli.static_catalog import build_static_help_catalog
+    from cts.config.loader import load_raw_config
+
+    loaded = load_raw_config(str(config_path))
+    catalog = build_static_help_catalog(loaded)
+    index_path = write_command_index(str(config_path), loaded, catalog)
+
+    assert index_path == resolve_command_index_path(str(config_path))
+    assert index_path.exists()
+
+    cached = load_command_index(str(config_path))
+    assert cached is not None
+    mount = cached.find_by_path(("demo", "echo"))
+    assert mount is not None
+    assert mount.mount_id == "demo-echo"
+
+
+def test_command_index_status_reports_dependency_changes(tmp_path: Path, monkeypatch):
+    source_root = Path(__file__).resolve().parents[1] / "examples" / "split-demo"
+    workspace = tmp_path / "split-demo"
+    shutil.copytree(source_root, workspace)
+    config_path = workspace / "cts.yaml"
+    monkeypatch.setenv("CTS_CLI_INDEX_DIR", str(tmp_path / "cli-index"))
+
+    from cts.cli.command_index import inspect_command_index, write_command_index
+    from cts.cli.static_catalog import build_static_help_catalog
+    from cts.config.loader import load_raw_config
+
+    loaded = load_raw_config(str(config_path))
+    catalog = build_static_help_catalog(loaded)
+    write_command_index(str(config_path), loaded, catalog)
+
+    manifest_path = workspace / "echo-manifest.yaml"
+    manifest_path.write_text(manifest_path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    status = inspect_command_index(str(config_path))
+    assert status["ok"] is False
+    assert status["reason"] == "dependencies_changed"
+    assert any(item["reason"] in {"mtime_changed", "size_changed"} for item in status["changed_dependencies"])
+
+
+def test_apply_update_refreshes_command_index(tmp_path: Path, monkeypatch):
+    source_root = Path(__file__).resolve().parents[1] / "examples" / "split-demo"
+    workspace = tmp_path / "split-demo"
+    shutil.copytree(source_root, workspace)
+    config_path = workspace / "cts.yaml"
+    monkeypatch.setenv("CTS_CLI_INDEX_DIR", str(tmp_path / "cli-index"))
+
+    from cts.cli.command_index import inspect_command_index
+    from cts.config.editor import apply_update, prepare_edit_session
+
+    session = prepare_edit_session(config_path)
+    updated, _ = apply_update(
+        session,
+        lambda payload: payload.setdefault("aliases", []).append({"from": ["demo-alias"], "to": ["demo", "echo"]}),
+        compile_runtime=False,
+    )
+
+    assert updated["aliases"][-1]["from"] == ["demo-alias"]
+    status = inspect_command_index(str(config_path))
+    assert status["ok"] is True
+    assert status["reason"] == "ready"
+
+
+def test_cli_state_uses_precompiled_command_index(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("CTS_CLI_INDEX_DIR", str(tmp_path / "cli-index"))
+
+    from cts.cli.command_index import resolve_command_index_path
+    from cts.cli.state import CLIState
+    from cts.cli.static_catalog import StaticHelpCatalog, StaticMountRecord, StaticOperationRecord
+
+    catalog = StaticHelpCatalog()
+    catalog.add_mount(
+        StaticMountRecord(
+            mount_id="demo-echo",
+            source_name="demo_cli",
+            provider_type="cli",
+            operation=StaticOperationRecord(
+                id="echo",
+                source="demo_cli",
+                provider_type="cli",
+                title="Echo",
+            ),
+            command_path=["demo", "echo"],
+            stable_name="demo.echo",
+            summary="Echo",
+            description="Echo text",
+        )
+    )
+
+    index_path = resolve_command_index_path(str(tmp_path / "cts.yaml"))
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "kind": "cts_cli_command_index",
+                "config_path": str(tmp_path / "cts.yaml"),
+                "dependencies": [],
+                "catalog": {
+                    "mounts": [
+                        {
+                            "mount_id": "demo-echo",
+                            "source_name": "demo_cli",
+                            "provider_type": "cli",
+                            "operation": {
+                                "id": "echo",
+                                "source": "demo_cli",
+                                "provider_type": "cli",
+                                "title": "Echo",
+                                "stable_name": None,
+                                "description": None,
+                                "kind": "action",
+                                "tags": [],
+                                "group": None,
+                                "risk": "read",
+                                "input_schema": {},
+                                "output_schema": None,
+                                "examples": [],
+                                "supported_surfaces": ["cli", "invoke"],
+                                "provider_config": {},
+                            },
+                            "command_path": ["demo", "echo"],
+                            "aliases": [],
+                            "stable_name": "demo.echo",
+                            "summary": "Echo",
+                            "description": "Echo text",
+                            "source_config": None,
+                            "mount_config": None,
+                            "generated": False,
+                            "generated_from": None,
+                        }
+                    ],
+                    "group_help": [],
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    state = CLIState(
+        config_path=tmp_path / "cts.yaml",
+        profile=None,
+        static_catalog_builder=lambda loaded: (_ for _ in ()).throw(AssertionError("builder should not run")),
+    )
+
+    loaded_catalog = state.get_static_catalog()
+    assert loaded_catalog is not None
+    assert loaded_catalog.find_by_path(("demo", "echo")) is not None
+
+
+def test_dynamic_command_lookup_uses_static_catalog_without_building_app(monkeypatch):
+    from cts.cli.root import CatalogBackedGroup
+    from cts.cli.state import CLIState
+    from cts.cli.static_catalog import StaticHelpCatalog, StaticMountRecord, StaticOperationRecord
+
+    catalog = StaticHelpCatalog()
+    catalog.add_group_help(("demo",), summary="Demo commands", description="Demo commands")
+    catalog.add_mount(
+        StaticMountRecord(
+            mount_id="demo-echo",
+            source_name="demo_cli",
+            provider_type="cli",
+            operation=StaticOperationRecord(
+                id="echo",
+                source="demo_cli",
+                provider_type="cli",
+                title="Echo",
+                input_schema={"type": "object", "properties": {"text": {"type": "string"}}, "required": []},
+            ),
+            command_path=["demo", "echo"],
+            stable_name="demo.echo",
+            summary="Echo",
+            description="Echo text",
+        )
+    )
+
+    state = CLIState(config_path=None, profile=None, requested_command_path=("demo", "echo"))
+    state._static_catalog = catalog
+    state._static_catalog_loaded = True
+
+    monkeypatch.setattr(root_module, "_get_state", lambda ctx: state)
+    monkeypatch.setattr(root_module, "_get_app", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("_get_app should not run")))
+
+    group = CatalogBackedGroup(name="demo", path_prefix=("demo",), dynamic_only=True)
+    ctx = click.Context(group)
+    command = group.get_command(ctx, "echo")
+
+    assert command is not None
+    assert command.name == "echo"
+
+
+def test_dynamic_command_lookup_skips_runtime_help_fallback_outside_help(monkeypatch):
+    from cts.cli.root import CatalogBackedGroup
+    from cts.cli.state import CLIState
+    from cts.cli.static_catalog import StaticHelpCatalog, StaticMountRecord, StaticOperationRecord
+
+    catalog = StaticHelpCatalog()
+    catalog.add_mount(
+        StaticMountRecord(
+            mount_id="demo-empty",
+            source_name="demo_cli",
+            provider_type="cli",
+            operation=StaticOperationRecord(
+                id="empty",
+                source="demo_cli",
+                provider_type="cli",
+                title="Empty",
+                input_schema={},
+            ),
+            command_path=["demo", "empty"],
+            stable_name="demo.empty",
+            summary="Empty",
+            description="No static schema",
+        )
+    )
+
+    state = CLIState(config_path=None, profile=None, help_requested=False, requested_command_path=("demo", "empty"))
+    state._static_catalog = catalog
+    state._static_catalog_loaded = True
+
+    monkeypatch.setattr(root_module, "_get_state", lambda ctx: state)
+    monkeypatch.setattr(root_module, "_get_app", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("_get_app should not run")))
+
+    group = CatalogBackedGroup(name="demo", path_prefix=("demo",), dynamic_only=True)
+    ctx = click.Context(group)
+    command = group.get_command(ctx, "empty")
+
+    assert command is not None
+    assert command.name == "empty"
+
+
+def test_warm_index_command_writes_index(tmp_path: Path, monkeypatch):
+    source_root = Path(__file__).resolve().parents[1] / "examples" / "split-demo"
+    workspace = tmp_path / "split-demo"
+    shutil.copytree(source_root, workspace)
+    config_path = workspace / "cts.yaml"
+    index_dir = tmp_path / "cli-index"
+    monkeypatch.setenv("CTS_CLI_INDEX_DIR", str(index_dir))
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["--config", str(config_path), "manage", "config", "warm-index", "--format", "json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert Path(payload["index_path"]).exists()
+    assert str(index_dir) in payload["index_path"]
+
+
+def test_index_status_command_reports_ready_index(tmp_path: Path, monkeypatch):
+    source_root = Path(__file__).resolve().parents[1] / "examples" / "split-demo"
+    workspace = tmp_path / "split-demo"
+    shutil.copytree(source_root, workspace)
+    config_path = workspace / "cts.yaml"
+    index_dir = tmp_path / "cli-index"
+    monkeypatch.setenv("CTS_CLI_INDEX_DIR", str(index_dir))
+
+    runner = CliRunner()
+    warm_result = runner.invoke(main, ["--config", str(config_path), "manage", "config", "warm-index", "--format", "json"])
+    assert warm_result.exit_code == 0
+
+    status_result = runner.invoke(main, ["--config", str(config_path), "manage", "config", "index-status", "--format", "json"])
+    assert status_result.exit_code == 0
+    payload = json.loads(status_result.output)
+    assert payload["ok"] is True
+    assert payload["reason"] == "ready"
+    assert Path(payload["path"]).exists()
 
 
 def test_minimal_build_does_not_emit_bootstrap_log_events(tmp_path: Path):
@@ -76,7 +463,11 @@ def test_all_builtin_commands_have_short_descriptions():
     missing: list[str] = []
 
     def walk(group: click.MultiCommand, prefix: tuple[str, ...] = ()) -> None:
-        for name, command in group.commands.items():
+        ctx = click.Context(group)
+        for name in group.list_commands(ctx):
+            command = group.get_command(ctx, name)
+            if command is None:
+                continue
             path = prefix + (name,)
             short = command.get_short_help_str(limit=1000).strip()
             if not short:

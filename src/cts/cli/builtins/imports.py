@@ -8,16 +8,6 @@ from typing import Any, Callable, Dict, List, Optional
 
 import click
 
-from cts.imports.framework import (
-    build_provider_import_plan,
-    describe_provider_import,
-    execute_import_plan,
-    provider_supports_import,
-)
-from cts.imports.models import ImportArgumentDescriptor, ImportRequest, ImportWizardField
-from cts.imports.selectors import build_operation_select
-
-
 def register_import_commands(
     import_group,
     *,
@@ -45,14 +35,14 @@ def register_import_commands(
                     show_choices=False,
                 )
             provider = _resolve_provider_for_import(app, str(provider_type))
-            descriptor = describe_provider_import(provider, app)
+            descriptor = _describe_provider_import(provider, app)
             values = _run_provider_wizard(descriptor)
             source_name = str(values.get("source_name") or "")
-            request = ImportRequest(
+            request = _make_import_request(
                 provider_type=str(provider_type),
                 source_name=source_name or None,
                 values=values,
-                operation_select=build_operation_select(values),
+                operation_select=_build_operation_select(values),
                 apply=apply,
                 profile=state.profile,
                 requested_by="wizard",
@@ -149,7 +139,7 @@ def _build_provider_import_command(
     render_payload: Callable,
     fail: Callable,
 ) -> click.Command:
-    descriptor = describe_provider_import(provider, app)
+    descriptor = _describe_provider_import(provider, app)
     params: List[click.Parameter] = []
     for argument in descriptor.arguments:
         param = _build_click_parameter(argument)
@@ -169,14 +159,14 @@ def _build_provider_import_command(
             use_wizard = bool(values.pop("wizard", False))
             apply = bool(values.pop("apply", False))
             if use_wizard:
-                wizard_values = _run_provider_wizard(describe_provider_import(provider_inner, app_inner))
+                wizard_values = _run_provider_wizard(_describe_provider_import(provider_inner, app_inner))
                 values.update({key: value for key, value in wizard_values.items() if value not in (None, "", ())})
             source_name = str(values.get("source_name") or "")
-            request = ImportRequest(
+            request = _make_import_request(
                 provider_type=provider_type,
                 source_name=source_name or None,
                 values=values,
-                operation_select=build_operation_select(values),
+                operation_select=_build_operation_select(values),
                 apply=apply,
                 profile=state.profile,
                 requested_by="wizard" if use_wizard else "cli",
@@ -205,7 +195,7 @@ def _build_provider_import_command(
     )
 
 
-def _build_click_parameter(argument: ImportArgumentDescriptor) -> Optional[click.Parameter]:
+def _build_click_parameter(argument: Any) -> Optional[click.Parameter]:
     param_type = _click_type_for(argument)
     if argument.kind == "argument":
         nargs = -1 if argument.value_type == "string_list" else 1
@@ -221,7 +211,7 @@ def _build_click_parameter(argument: ImportArgumentDescriptor) -> Optional[click
     return None
 
 
-def _click_type_for(argument: ImportArgumentDescriptor) -> Any:
+def _click_type_for(argument: Any) -> Any:
     if argument.value_type == "choice":
         return click.Choice(list(argument.choices))
     if argument.value_type == "path":
@@ -246,7 +236,7 @@ def _import_provider_types(app: Any) -> List[str]:
     result = []
     for provider_type in sorted(app.provider_registry.supported_types()):
         provider = app.provider_registry.get(provider_type)
-        if provider_supports_import(provider):
+        if _provider_supports_import(provider):
             result.append(provider_type)
     return result
 
@@ -255,7 +245,7 @@ def _wizard_provider_types(app: Any) -> List[str]:
     result = []
     for provider_type in _import_provider_types(app):
         provider = app.provider_registry.get(provider_type)
-        descriptor = describe_provider_import(provider, app)
+        descriptor = _describe_provider_import(provider, app)
         if descriptor.supports_wizard:
             result.append(provider_type)
     return result
@@ -263,7 +253,7 @@ def _wizard_provider_types(app: Any) -> List[str]:
 
 def _resolve_provider_for_import(app: Any, provider_type: str) -> Any:
     provider = app.provider_registry.get(provider_type)
-    if not provider_supports_import(provider):
+    if not _provider_supports_import(provider):
         raise click.UsageError(f"provider '{provider_type}' does not support import")
     return provider
 
@@ -273,7 +263,7 @@ def _run_provider_wizard(descriptor: Any) -> Dict[str, Any]:
     wizard = descriptor.wizard
     if wizard is None:
         for argument in descriptor.arguments:
-            field = ImportWizardField(
+            field = _make_import_wizard_field(
                 name=argument.name,
                 label=argument.name.replace("_", " ").title(),
                 value_type=argument.value_type,
@@ -295,7 +285,7 @@ def _run_provider_wizard(descriptor: Any) -> Dict[str, Any]:
     return values
 
 
-def _field_is_visible(field: ImportWizardField, values: Dict[str, Any]) -> bool:
+def _field_is_visible(field: Any, values: Dict[str, Any]) -> bool:
     if not field.visible_when:
         return True
     for key, expected in field.visible_when.items():
@@ -304,7 +294,7 @@ def _field_is_visible(field: ImportWizardField, values: Dict[str, Any]) -> bool:
     return True
 
 
-def _prompt_for_field(field: ImportWizardField) -> Any:
+def _prompt_for_field(field: Any) -> Any:
     prompt_text = field.label
     if field.value_type == "choice":
         return click.prompt(prompt_text, type=click.Choice(list(field.choices), case_sensitive=False), default=field.default or None, show_choices=False)
@@ -328,7 +318,7 @@ def _prompt_for_field(field: ImportWizardField) -> Any:
 
 
 def _execute_import_request(
-    request: ImportRequest,
+    request: Any,
     *,
     provider: Any,
     app: Any,
@@ -346,11 +336,11 @@ def _execute_import_request(
         if plan_progress.get("prepare"):
             progress.advance(plan_progress["prepare"])
         request.values["__progress_callback__"] = plan_progress.get("callback")
-        plan = build_provider_import_plan(provider, request, app)
+        plan = _build_provider_import_plan(provider, request, app)
         request.values.pop("__progress_callback__", None)
         if not request.apply:
             return dict(plan.preview)
-        return execute_import_plan(
+        return _execute_provider_import_plan(
             plan,
             session=session,
             app=app,
@@ -361,7 +351,7 @@ def _execute_import_request(
         )
 
 
-def _import_progress_definition(request: ImportRequest) -> tuple[str, list[str]]:
+def _import_progress_definition(request: Any) -> tuple[str, list[str]]:
     source_name = request.source_name or str(request.values.get("source_name") or "")
     provider_type = request.provider_type
     if provider_type == "cli" and bool(request.values.get("import_all")):
@@ -441,3 +431,45 @@ def _build_plan_progress(progress: Any, request: ImportRequest) -> Dict[str, Any
 
 def _dash(value: str) -> str:
     return value.replace("_", "-")
+
+
+def _provider_supports_import(provider: Any) -> bool:
+    from cts.imports.framework import provider_supports_import
+
+    return provider_supports_import(provider)
+
+
+def _describe_provider_import(provider: Any, app: Any) -> Any:
+    from cts.imports.framework import describe_provider_import
+
+    return describe_provider_import(provider, app)
+
+
+def _build_provider_import_plan(provider: Any, request: Any, app: Any) -> Any:
+    from cts.imports.framework import build_provider_import_plan
+
+    return build_provider_import_plan(provider, request, app)
+
+
+def _execute_provider_import_plan(plan: Any, **kwargs: Any) -> Dict[str, Any]:
+    from cts.imports.framework import execute_import_plan
+
+    return execute_import_plan(plan, **kwargs)
+
+
+def _build_operation_select(values: Dict[str, Any]) -> Dict[str, Any]:
+    from cts.imports.selectors import build_operation_select
+
+    return build_operation_select(values)
+
+
+def _make_import_request(**kwargs: Any) -> Any:
+    from cts.imports.models import ImportRequest
+
+    return ImportRequest(**kwargs)
+
+
+def _make_import_wizard_field(**kwargs: Any) -> Any:
+    from cts.imports.models import ImportWizardField
+
+    return ImportWizardField(**kwargs)

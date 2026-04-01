@@ -12,10 +12,14 @@ from typing import Any, Callable, Dict, List, Optional
 
 import click
 
-from cts import __version__
-from cts.cli.dynamic import DirectPathGroup, GroupedOptionCommand, build_dynamic_command, build_static_help_command
-from cts.cli.execution_runtime import build_dynamic_callback, run_mount_command
-from cts.cli.registration import register_builtin_commands
+from cts.cli.registration import (
+    load_alias_builtin_commands,
+    load_import_builtin_commands,
+    load_inspect_builtin_commands,
+    load_manage_builtin_commands,
+    load_mount_builtin_commands,
+    load_source_builtin_commands,
+)
 from cts.cli.support import (
     ProgressSteps as _ProgressSteps,
     build_error_command as _support_build_error_command,
@@ -35,44 +39,21 @@ from cts.cli.support import (
 )
 from cts.cli.lazy import (
     CTSApp,
-    _config_edit_error,
-    apply_assignment,
     apply_update,
-    build_app,
-    build_error_envelope,
-    build_generated_mount,
-    build_mount_details,
-    build_mount_record,
-    build_source_details,
-    build_source_summary,
     conflict_signatures,
-    ensure_list,
-    ensure_mapping,
-    lint_loaded_config,
-    load_manifest,
-    manifest_operations_from_data,
-    merge_operation_into_manifest,
-    operation_from_config,
-    operation_matches_select,
     parse_assignment,
     parse_string_map_item,
     prepare_edit_session,
     render_payload,
-    summarize_help_text,
-    synthesize_operation,
-    write_manifest_operations,
     create_http_server,
     default_ui_dist_dir,
 )
 from cts.cli.state import CLIState, get_app as _cli_get_app, get_state as _cli_get_state, parse_root_argv as _parse_root_argv
-from cts.cli.static_catalog import StaticHelpCatalog, build_static_help_catalog
-from cts.execution.errors import RegistryError
-from cts.execution.logging import (
-    emit_app_event,
-)
 
 
 def _build_static_help_catalog(loaded):
+    from cts.cli.static_catalog import build_static_help_catalog
+
     return build_static_help_catalog(loaded)
 
 
@@ -121,6 +102,31 @@ def pass_invoke_app(func):
     return _pass_app_mode("invoke", func)
 
 
+class DeferredLoadGroup(click.Group):
+    def __init__(self, *args, loader: Optional[Callable[[click.Group], None]] = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._loader = loader
+        self._loaded = False
+
+    def _ensure_loaded(self) -> None:
+        if self._loaded or self._loader is None:
+            return
+        self._loader(self)
+        self._loaded = True
+
+    def list_commands(self, ctx):
+        self._ensure_loaded()
+        return super().list_commands(ctx)
+
+    def get_command(self, ctx, cmd_name):
+        self._ensure_loaded()
+        return super().get_command(ctx, cmd_name)
+
+    def invoke(self, ctx):
+        self._ensure_loaded()
+        return super().invoke(ctx)
+
+
 class CatalogBackedGroup(click.Group):
     def __init__(self, *args, path_prefix=None, dynamic_only: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
@@ -130,11 +136,10 @@ class CatalogBackedGroup(click.Group):
     def list_commands(self, ctx):
         commands = [] if self.dynamic_only else list(super().list_commands(ctx))
         state = _get_state(ctx)
-        if state.help_requested:
-            catalog = state.get_static_help_catalog()
-            if catalog is not None:
-                commands.extend(catalog.child_tokens(self.path_prefix))
-                return sorted(set(commands))
+        catalog = state.get_static_help_catalog() if state.help_requested else state.get_static_catalog()
+        if catalog is not None:
+            commands.extend(catalog.child_tokens(self.path_prefix))
+            return sorted(set(commands))
         try:
             app = _get_app(ctx)
         except Exception:
@@ -150,6 +155,8 @@ class CatalogBackedGroup(click.Group):
             target_path = tuple(direct_mount.command_path)
             if next_prefix == target_path[: len(next_prefix)]:
                 if len(next_prefix) < len(target_path):
+                    from cts.cli.dynamic import DirectPathGroup
+
                     return DirectPathGroup(
                         name=cmd_name,
                         path_prefix=next_prefix,
@@ -162,6 +169,8 @@ class CatalogBackedGroup(click.Group):
                 runtime_command = _build_runtime_help_command(ctx, next_prefix, direct_mount)
                 if runtime_command is not None:
                     return runtime_command
+                from cts.cli.dynamic import build_static_help_command
+
                 return build_static_help_command(direct_mount, callback=_dynamic_callback(direct_mount))
 
         if not self.dynamic_only:
@@ -169,23 +178,29 @@ class CatalogBackedGroup(click.Group):
             if builtin is not None:
                 return builtin
 
-        if state.help_requested:
-            catalog = state.get_static_help_catalog()
-            if catalog is not None:
-                next_prefix = self.path_prefix + (cmd_name,)
-                mount = catalog.find_by_path(next_prefix)
-                if mount:
-                    return build_static_help_command(mount, callback=_dynamic_callback(mount))
-                if catalog.has_group(next_prefix):
-                    group_summary = catalog.group_summary(next_prefix)
-                    return CatalogBackedGroup(
-                        name=cmd_name,
-                        path_prefix=next_prefix,
-                        dynamic_only=True,
-                        short_help=group_summary,
-                        help=catalog.group_description(next_prefix),
-                        no_args_is_help=True,
-                    )
+        catalog = state.get_static_help_catalog() if state.help_requested else state.get_static_catalog()
+        if catalog is not None:
+            next_prefix = self.path_prefix + (cmd_name,)
+            mount = catalog.find_by_path(next_prefix)
+            if mount:
+                if state.help_requested and _static_help_needs_runtime_fallback(mount):
+                    runtime_command = _build_runtime_help_command(ctx, next_prefix, mount)
+                    if runtime_command is not None:
+                        return runtime_command
+                from cts.cli.dynamic import build_static_help_command
+
+                return build_static_help_command(mount, callback=_dynamic_callback(mount))
+            if catalog.has_group(next_prefix):
+                group_summary = catalog.group_summary(next_prefix)
+                return CatalogBackedGroup(
+                    name=cmd_name,
+                    path_prefix=next_prefix,
+                    dynamic_only=True,
+                    short_help=group_summary,
+                    help=catalog.group_description(next_prefix),
+                    no_args_is_help=True,
+                )
+            if state.help_requested:
                 return None
 
         try:
@@ -196,6 +211,8 @@ class CatalogBackedGroup(click.Group):
         next_prefix = self.path_prefix + (cmd_name,)
         mount = app.catalog.find_by_path(next_prefix)
         if mount:
+            from cts.cli.dynamic import build_dynamic_command
+
             return build_dynamic_command(app, mount, callback=_dynamic_callback(mount))
         if app.catalog.has_group(next_prefix):
             group_summary = app.catalog.group_summary(next_prefix)
@@ -226,7 +243,19 @@ def _build_runtime_help_command(ctx: click.Context, command_path: tuple[str, ...
     runtime_mount = app.catalog.find_by_path(list(command_path))
     if runtime_mount is None:
         return None
+    from cts.cli.dynamic import build_dynamic_command
+
     return build_dynamic_command(app, runtime_mount, callback=_dynamic_callback(runtime_mount))
+
+
+def _show_version(ctx: click.Context, _param: click.Parameter, value: bool) -> None:
+    if not value or ctx.resilient_parsing:
+        return
+
+    from cts import __version__
+
+    click.echo(f"cts, version {__version__}")
+    ctx.exit()
 
 
 @click.group(
@@ -245,7 +274,14 @@ def _build_runtime_help_command(ctx: click.Context, command_path: tuple[str, ...
     show_default=True,
     help="Default output mode for top-level commands.",
 )
-@click.version_option(__version__, prog_name="cts")
+@click.option(
+    "--version",
+    is_flag=True,
+    expose_value=False,
+    is_eager=True,
+    callback=_show_version,
+    help="Show the version and exit.",
+)
 @click.pass_context
 def main(ctx: click.Context, config_path: Optional[Path], profile: Optional[str], global_output: str) -> None:
     raw = _parse_root_argv(sys.argv[1:])
@@ -259,45 +295,38 @@ def main(ctx: click.Context, config_path: Optional[Path], profile: Optional[str]
     )
 
 
-@main.group()
+@main.group(cls=DeferredLoadGroup, loader=lambda group: _load_manage_builtin_commands())
 def manage() -> None:
     """CTS administration and maintenance commands."""
 
 
-@manage.group()
+@manage.group(cls=DeferredLoadGroup, loader=lambda group: _load_source_builtin_commands())
 def source() -> None:
     """Source registry operations."""
 
 
-@main.group("import")
+@main.group("import", cls=DeferredLoadGroup, loader=lambda group: _load_import_builtin_commands())
 def import_group() -> None:
     """Provider-driven import entrypoint for sources, mounts, and wizard flows."""
 
 
-@manage.group()
+@manage.group(cls=DeferredLoadGroup, loader=lambda group: _load_mount_builtin_commands())
 def mount() -> None:
     """Mount registry operations."""
 
 
-@manage.group("alias")
+@manage.group("alias", cls=DeferredLoadGroup, loader=lambda group: _load_alias_builtin_commands())
 def alias_group() -> None:
     """Top-level alias operations."""
 
 
-@manage.group()
+@manage.group(cls=DeferredLoadGroup, loader=lambda group: _load_inspect_builtin_commands())
 def inspect() -> None:
     """Inspect compiled sources, mounts, and operations."""
 
 
-register_builtin_commands(
-    main=main,
-    manage=manage,
-    source=source,
-    import_group=import_group,
-    mount=mount,
-    alias_group=alias_group,
-    inspect=inspect,
-    deps={
+def _builtin_deps() -> Dict[str, Any]:
+    return {
         "pass_app": pass_app,
         "pass_help_app": pass_help_app,
         "pass_minimal_app": pass_minimal_app,
@@ -311,7 +340,7 @@ register_builtin_commands(
         "status": lambda output_format, message: _status(output_format, message),
         "parse_assignment_value": lambda raw: _parse_assignment(raw),
         "parse_string_pair": lambda raw, field_name: _parse_string_pair(raw, field_name=field_name),
-        "emit_app_event": lambda *args, **kwargs: emit_app_event(*args, **kwargs),
+        "emit_app_event": lambda *args, **kwargs: _emit_app_event(*args, **kwargs),
         "prepare_edit_session": lambda config_path, target_file=None: prepare_edit_session(config_path, target_file=target_file),
         "app_factory": lambda loaded, profile, config_path: CTSApp(
             loaded,
@@ -330,11 +359,42 @@ register_builtin_commands(
         "run_mount_command": lambda app, mount, kwargs, mode, **extra: _run_mount_command(app, mount, kwargs, mode, **extra),
         "create_http_server": lambda *args, **kwargs: create_http_server(*args, **kwargs),
         "default_ui_dist_dir": lambda: default_ui_dist_dir(),
-    },
-)
+    }
+
+
+def _load_manage_builtin_commands() -> None:
+    load_manage_builtin_commands(main=main, manage=manage, deps=_builtin_deps())
+
+
+def _load_source_builtin_commands() -> None:
+    load_source_builtin_commands(source=source, deps=_builtin_deps())
+
+
+def _load_import_builtin_commands() -> None:
+    load_import_builtin_commands(import_group=import_group, deps=_builtin_deps())
+
+
+def _load_mount_builtin_commands() -> None:
+    load_mount_builtin_commands(mount=mount, deps=_builtin_deps())
+
+
+def _load_alias_builtin_commands() -> None:
+    load_alias_builtin_commands(alias_group=alias_group, deps=_builtin_deps())
+
+
+def _load_inspect_builtin_commands() -> None:
+    load_inspect_builtin_commands(inspect=inspect, deps=_builtin_deps())
+
+
+def _emit_app_event(*args: Any, **kwargs: Any) -> None:
+    from cts.execution.logging import emit_app_event
+
+    emit_app_event(*args, **kwargs)
 
 
 def _dynamic_callback(mount):
+    from cts.cli.execution_runtime import build_dynamic_callback
+
     return build_dynamic_callback(
         mount,
         get_app=lambda ctx, mode="full", progress_callback=None: _get_app(ctx, mode=mode, progress_callback=progress_callback),
@@ -346,6 +406,8 @@ def _dynamic_callback(mount):
 
 
 def _run_mount_command(app: CTSApp, mount, kwargs: Dict[str, Any], mode: str, **extra: Any) -> None:
+    from cts.cli.execution_runtime import run_mount_command
+
     run_mount_command(
         app,
         mount,

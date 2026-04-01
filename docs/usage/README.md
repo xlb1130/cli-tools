@@ -86,6 +86,55 @@ cts import wizard <provider-type>
 - 在结果上追加处理
 - 加审计、治理等横切逻辑
 
+## 导入时过滤工具
+
+所有 `cts import` 命令都支持在导入时选择或排除特定工具：
+
+### 过滤参数
+
+| 参数 | 说明 |
+|------|------|
+| `--include` | 只导入匹配 glob 模式的工具 |
+| `--exclude` | 排除匹配 glob 模式的工具 |
+| `--tag` | 只导入带有指定标签的工具 |
+
+### 使用示例
+
+```bash
+# MCP：只导入 search_* 工具，排除 delete_* 工具
+cts import mcp my-mcp --server-config '...' \
+  --include 'search_*' --exclude 'delete_*' --apply
+
+# OpenAPI：只导入 GET 接口
+cts import openapi petstore --spec-file ./api.yaml \
+  --include 'get*' --apply
+
+# CLI：导入整棵命令树，但排除 remote 相关
+cts import cli git git --all \
+  --include 'branch*' --exclude '*remote*' --apply
+```
+
+### YAML 配置方式
+
+```yaml
+mounts:
+  - id: my-service
+    source: my-source
+    select:
+      include: ["query_*"]
+      exclude: ["*delete*"]
+      tags: ["read-only"]
+```
+
+### 匹配规则
+
+过滤会匹配工具的以下字段：
+- `id` - 工具 ID
+- `stable_name` - 稳定名称
+- `tags` - 标签列表（用于 `--tag` 过滤）
+
+`include` 和 `exclude` 支持 glob 模式：`*` 匹配任意字符，`?` 匹配单个字符。
+
 ## 按场景选文档
 
 如果你现在的目标是下面这些，可以直接跳：

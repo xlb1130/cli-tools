@@ -96,6 +96,22 @@ Built-in provider types include:
 
 Plugin-provided provider types can also expose their own import command and wizard automatically.
 
+## Command Index Warmup
+
+If your config is large or your mounted command tree is wide, you can precompile the command index:
+
+```bash
+cts manage config warm-index --format json
+```
+
+To inspect whether the current index is still valid, and which dependency files caused it to become stale:
+
+```bash
+cts manage config index-status --format json
+```
+
+When config is updated through `source`, `mount`, `alias`, or `import` commands, the command index is refreshed automatically.
+
 ## Start With A One-Line Shell Import
 
 This is the fastest starting point because it does not depend on external services or a config file you write by hand.
@@ -161,17 +177,15 @@ cts manage source test my-mcp --discover --format json
 cts my-mcp --help
 ```
 
-If you only want to mount part of the discovered operations during import, add include/exclude filters:
+Use `--include` / `--exclude` / `--tag` to filter which operations to mount (works for all providers):
 
 ```bash
 cts import mcp my-mcp \
-  --server-config '{"type":"sse","url":"https://mcp.api-inference.modelscope.net/6d85ac1213db43/sse"}' \
+  --server-config '{"type":"sse","url":"..."}' \
   --include 'search_*' \
   --exclude 'delete_*' \
   --apply
 ```
-
-The same `--include` / `--exclude` pattern also works for bulk import providers such as `cli --all`, `openapi`, and `graphql`.
 
 Continue with [MCP](docs/usage/07-mcp/README.md).
 

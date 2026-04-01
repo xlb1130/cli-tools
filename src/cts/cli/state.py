@@ -8,9 +8,6 @@ from typing import Any, Callable, Dict, Optional
 import click
 
 from cts.cli.command_registry import resolve_auto_mode, resolve_command_scopes, should_load_drift_governance
-from cts.config.loader import load_raw_config
-
-from cts.cli.lazy import build_app
 
 
 StaticCatalogBuilder = Callable[[Any], Any]
@@ -39,6 +36,8 @@ class CLIState:
         return resolve_command_scopes(self.requested_command_path)
 
     def get_app(self, mode: str = "auto", progress_callback: Optional[Callable[[str], None]] = None) -> Any:
+        from cts.cli.lazy import build_app
+
         resolved_mode = (
             resolve_auto_mode(self.requested_command_path, help_requested=self.help_requested)
             if mode == "auto"
@@ -133,8 +132,18 @@ class CLIState:
             self._static_catalog = None
             return None
         try:
-            loaded = load_raw_config(str(self.config_path) if self.config_path else None)
+            from cts.cli.command_index import load_command_index, write_command_index
+            from cts.config.loader import load_raw_config
+
+            explicit_config_path = str(self.config_path) if self.config_path else None
+            cached_catalog = load_command_index(explicit_config_path)
+            if cached_catalog is not None:
+                self._static_catalog = cached_catalog
+                return self._static_catalog
+
+            loaded = load_raw_config(explicit_config_path)
             self._static_catalog = self.static_catalog_builder(loaded)
+            write_command_index(explicit_config_path, loaded, self._static_catalog)
         except Exception:
             self._static_catalog = None
         return self._static_catalog

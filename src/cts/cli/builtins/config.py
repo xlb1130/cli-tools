@@ -165,9 +165,57 @@ def register_config_group(
                 "warnings": result.warnings,
                 "plan": plan.to_dict() if dry_run else None,
             }
+            if result.success and not dry_run:
+                from cts.cli.command_index import rebuild_command_index
+
+                payload["command_index"] = rebuild_command_index(config_path)
             click.echo(render_payload(payload, output_format))
 
             if not result.success:
                 ctx.exit(1)
         except Exception as exc:
             fail(ctx, exc, "config_migrate", output_format)
+
+    @config.command(
+        name="warm-index",
+        help="Precompile and refresh the static command index.",
+        short_help="Precompile the static command index.",
+    )
+    @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
+    @click.pass_context
+    def config_warm_index(ctx: click.Context, output_format: str) -> None:
+        from cts.cli.command_index import rebuild_command_index, resolve_command_index_path
+
+        state = get_state(ctx)
+        config_path = str(state.config_path) if state.config_path else None
+
+        try:
+            rebuilt = rebuild_command_index(config_path)
+            payload = {
+                "ok": True,
+                "action": "warm_index",
+                **rebuilt,
+                "cache_key_path": str(resolve_command_index_path(config_path)),
+            }
+            click.echo(render_payload(payload, output_format))
+        except Exception as exc:
+            fail(ctx, exc, "config_warm_index", output_format)
+
+    @config.command(
+        name="index-status",
+        help="Show command index status and dependency freshness.",
+        short_help="Show command index status.",
+    )
+    @click.option("--format", "output_format", type=click.Choice(["text", "json"]), default="text")
+    @click.pass_context
+    def config_index_status(ctx: click.Context, output_format: str) -> None:
+        from cts.cli.command_index import inspect_command_index
+
+        state = get_state(ctx)
+        config_path = str(state.config_path) if state.config_path else None
+        try:
+            payload = inspect_command_index(config_path)
+            payload["action"] = "index_status"
+            click.echo(render_payload(payload, output_format))
+        except Exception as exc:
+            fail(ctx, exc, "config_index_status", output_format)
