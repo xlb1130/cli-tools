@@ -2,6 +2,10 @@
   "name": "cts-tooling",
   "private": true,
   "type": "module",
+  "scripts": {
+    "build": "cd frontend/app && npm run build",
+    "build:new": "cd front_new && npm run build"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0"
   }

@@ -30,6 +30,28 @@ paths:
 """.strip()
 
 
+OPENAPI_MULTI_SPEC = """
+openapi: 3.1.0
+info:
+  title: Demo
+  version: "1.0"
+paths:
+  /pets/{petId}:
+    get:
+      operationId: getPet
+      summary: Get pet
+      responses:
+        "200":
+          description: ok
+    delete:
+      operationId: deletePet
+      summary: Delete pet
+      responses:
+        "204":
+          description: deleted
+""".strip()
+
+
 GRAPHQL_SCHEMA = {
     "data": {
         "__schema": {
@@ -257,6 +279,45 @@ def test_import_openapi_apply_discovers_operations_and_creates_mounts(tmp_path: 
     app = build_app(str(config_path))
     assert "get_pet" in app.source_operations["petstore"]
     assert app.catalog.find_by_path(["petstore", "get-pet"]) is not None
+
+
+def test_import_openapi_apply_filters_mounts_with_include_and_exclude(tmp_path: Path):
+    spec_path = tmp_path / "petstore.yaml"
+    spec_path.write_text(OPENAPI_MULTI_SPEC, encoding="utf-8")
+    config_path = tmp_path / "cts.yaml"
+    config_path.write_text("version: 1\n", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "openapi",
+            "petstore",
+            "--spec-file",
+            str(spec_path),
+            "--mount-under",
+            "petstore",
+            "--include",
+            "get*",
+            "--exclude",
+            "*delete*",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["action"] == "import_openapi_apply"
+
+    app = build_app(str(config_path))
+    assert "get_pet" in app.source_operations["petstore"]
+    assert "delete_pet" in app.source_operations["petstore"]
+    assert app.catalog.find_by_path(["petstore", "get-pet"]) is not None
+    assert app.catalog.find_by_path(["petstore", "delete-pet"]) is None
 
 
 def test_import_graphql_apply_discovers_operations_and_creates_mounts(tmp_path: Path):

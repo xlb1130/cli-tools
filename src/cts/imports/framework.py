@@ -8,6 +8,7 @@ from cts.cli.import_planning import apply_cli_import_plan, apply_cli_import_tree
 from cts.config.editor import ConfigEditError, conflict_signatures, ensure_list, ensure_mapping
 from cts.importers import merge_operation_into_manifest, write_manifest_operations
 from cts.imports.models import ImportPlan, ImportPostAction, ImportRequest
+from cts.operation_select import normalize_operation_select, operation_matches_select
 from cts.providers.mcp_cli import build_mcp_group_help_from_discovery
 
 
@@ -287,10 +288,13 @@ def _execute_post_action(action: ImportPostAction, app: Any, *, progress: Any = 
     if action.action == "create_mounts_from_source_operations":
         source_name = str(action.payload.get("source_name") or "")
         under = list(action.payload.get("under") or [source_name])
+        operation_select = normalize_operation_select(action.payload.get("select"))
         mounts = []
         source_operations = app.source_operations.get(source_name, {})
         total = len(source_operations)
         for index, (operation_id, operation) in enumerate(source_operations.items(), start=1):
+            if not operation_matches_select(operation, operation_select):
+                continue
             if progress is not None:
                 progress.update_current(f"Creating mounts ({index}/{total}: {operation_id})")
             existing_mount = app.catalog.find_by_source_and_operation(source_name, operation_id)
@@ -317,7 +321,7 @@ def _execute_post_action(action: ImportPostAction, app: Any, *, progress: Any = 
                     },
                 }
             )
-        return {"action": action.action, "mounts": mounts, "count": len(mounts)}
+        return {"action": action.action, "mounts": mounts, "count": len(mounts), "operation_select": operation_select}
     return {"action": action.action, "skipped": True, "payload": dict(action.payload)}
 
 

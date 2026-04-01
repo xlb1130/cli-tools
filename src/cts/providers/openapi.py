@@ -21,6 +21,7 @@ from cts.imports.models import (
     ImportWizardField,
     ImportWizardStep,
 )
+from cts.imports.selectors import import_operation_select_arguments, import_operation_select_wizard_fields
 from cts.models import ExecutionPlan, InvokeRequest, InvokeResult, OperationDescriptor
 from cts.providers.base import ProviderError, build_help_descriptor
 from cts.providers.cli import operation_from_config
@@ -44,6 +45,7 @@ class OpenAPIProvider(HTTPProvider):
                 ImportArgumentDescriptor(name="spec_url", kind="option", value_type="string", flags=["--spec-url", "spec_url"]),
                 ImportArgumentDescriptor(name="base_url", kind="option", value_type="string", flags=["--base-url", "base_url"]),
                 ImportArgumentDescriptor(name="mount_under", kind="option", value_type="string", flags=["--mount-under", "mount_under"]),
+                *import_operation_select_arguments(),
             ],
             wizard=ImportWizardDescriptor(
                 steps=[
@@ -56,6 +58,7 @@ class OpenAPIProvider(HTTPProvider):
                             ImportWizardField(name="spec_url", label="Spec URL"),
                             ImportWizardField(name="base_url", label="Base URL override"),
                             ImportWizardField(name="mount_under", label="Mount prefix"),
+                            *import_operation_select_wizard_fields(),
                         ],
                     )
                 ]
@@ -80,14 +83,19 @@ class OpenAPIProvider(HTTPProvider):
         if values.get("base_url"):
             source_patch["base_url"] = str(values["base_url"])
         mount_under = [segment for segment in str(values.get("mount_under") or source_name).split() if segment]
+        operation_select = dict(request.operation_select)
         return ImportPlan(
             provider_type=self.provider_type,
             source_name=source_name,
             summary=f"Import OpenAPI source '{source_name}'",
             source_patch=source_patch,
+            operation_select=operation_select,
             post_compile_actions=[
                 ImportPostAction(action="sync_source", payload={"source_name": source_name}),
-                ImportPostAction(action="create_mounts_from_source_operations", payload={"source_name": source_name, "under": mount_under}),
+                ImportPostAction(
+                    action="create_mounts_from_source_operations",
+                    payload={"source_name": source_name, "under": mount_under, "select": operation_select},
+                ),
             ],
             preview={
                 "ok": True,
@@ -95,6 +103,7 @@ class OpenAPIProvider(HTTPProvider):
                 "apply_action": "import_openapi_apply",
                 "source_name": source_name,
                 "source_config": source_patch,
+                "operation_select": operation_select,
             },
             runtime_data={
                 "progress_labels": {

@@ -230,6 +230,18 @@ cts manage source test my-mcp --discover --format json
 cts my-mcp --help
 ```
 
+如果你只想在导入时挂载部分 operation / tool，可以直接加筛选条件：
+
+```bash
+cts import mcp my-mcp \
+  --server-config '{"type":"sse","url":"https://mcp.api-inference.modelscope.net/6d85ac1213db43/sse"}' \
+  --include 'search_*' \
+  --exclude 'delete_*' \
+  --apply
+```
+
+同样的 `--include` / `--exclude` 也适用于 `cli --all`、`openapi`、`graphql` 这类批量导入 provider。
+
 更完整的方式见 [MCP Server](docs/usage/07-mcp/README.md)。
 
 ## 启动 Web UI

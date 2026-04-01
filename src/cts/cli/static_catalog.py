@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import fnmatch
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
+from cts.operation_select import operation_matches_select
 
 
 class StaticHelpCatalog:
@@ -181,7 +181,7 @@ def build_static_help_catalog(loaded) -> StaticHelpCatalog:
         operations = get_operations(source_name)
         if mount.get("select"):
             for operation in operations.values():
-                if not _static_operation_matches_select(operation, mount.get("select") or {}):
+                if not operation_matches_select(operation, mount.get("select") or {}):
                     continue
                 record = _static_build_generated_mount(mount, source, operation)
                 catalog.add_mount(record)
@@ -314,21 +314,6 @@ def _static_tokenize_identifier(value: str) -> List[str]:
     return [part.lower() for part in parts] or [value]
 
 
-def _static_operation_matches_select(operation, select: Dict[str, Any]) -> bool:
-    includes = list(select.get("include", []))
-    excludes = list(select.get("exclude", []))
-    tags = set(select.get("tags", []))
-
-    haystacks = [operation.id, operation.stable_name or ""] + list(operation.tags)
-    if includes and not any(any(fnmatch.fnmatch(item, pattern) for item in haystacks) for pattern in includes):
-        return False
-    if excludes and any(any(fnmatch.fnmatch(item, pattern) for item in haystacks) for pattern in excludes):
-        return False
-    if tags and not tags.intersection(set(operation.tags)):
-        return False
-    return True
-
-
 def _static_manifest_operations_from_data(source_name: str, provider_type: str, manifest_path: Path) -> List[StaticOperationRecord]:
     raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
     if not isinstance(raw, dict):
@@ -384,3 +369,4 @@ def _static_operation_from_config(
         supported_surfaces=list(operation.get("supported_surfaces", ["cli", "invoke"])),
         provider_config=provider_config,
     )
+from cts.operation_select import operation_matches_select

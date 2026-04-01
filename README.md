@@ -136,6 +136,18 @@ cts manage source test my-mcp --discover --format json
 cts my-mcp --help
 ```
 
+If you only want to mount part of the discovered operations during import, add include/exclude filters:
+
+```bash
+cts import mcp my-mcp \
+  --server-config '{"type":"sse","url":"https://mcp.api-inference.modelscope.net/6d85ac1213db43/sse"}' \
+  --include 'search_*' \
+  --exclude 'delete_*' \
+  --apply
+```
+
+The same `--include` / `--exclude` pattern also works for bulk import providers such as `cli --all`, `openapi`, and `graphql`.
+
 Continue with [MCP](docs/usage/07-mcp/README.md).
 
 ## Start the Web UI

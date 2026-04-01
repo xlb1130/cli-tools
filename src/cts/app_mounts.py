@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import fnmatch
 import re
 from typing import Any, Dict, List
 
 from cts.config.models import MountConfig, ParamConfig, SourceConfig
 from cts.models import MountRecord, OperationDescriptor
+from cts.operation_select import operation_matches_select
 
 
 def build_generated_mount(mount: MountConfig, source_config: SourceConfig, operation: OperationDescriptor) -> MountRecord:
@@ -120,18 +120,3 @@ def normalize_schema_type(param_type: str) -> str:
 def tokenize_identifier(value: str) -> List[str]:
     parts = [segment for segment in re.split(r"[_./:\-]+", value) if segment]
     return [part.lower() for part in parts] or [value]
-
-
-def operation_matches_select(operation: OperationDescriptor, select: Dict[str, Any]) -> bool:
-    includes = list(select.get("include", []))
-    excludes = list(select.get("exclude", []))
-    tags = set(select.get("tags", []))
-
-    haystacks = [operation.id, operation.stable_name or ""] + list(operation.tags)
-    if includes and not any(any(fnmatch.fnmatch(item, pattern) for item in haystacks) for pattern in includes):
-        return False
-    if excludes and any(any(fnmatch.fnmatch(item, pattern) for item in haystacks) for pattern in excludes):
-        return False
-    if tags and not tags.intersection(set(operation.tags)):
-        return False
-    return True

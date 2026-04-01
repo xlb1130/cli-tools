@@ -15,6 +15,7 @@ from cts.imports.framework import (
     provider_supports_import,
 )
 from cts.imports.models import ImportArgumentDescriptor, ImportRequest, ImportWizardField
+from cts.imports.selectors import build_operation_select
 
 
 def register_import_commands(
@@ -51,6 +52,7 @@ def register_import_commands(
                 provider_type=str(provider_type),
                 source_name=source_name or None,
                 values=values,
+                operation_select=build_operation_select(values),
                 apply=apply,
                 profile=state.profile,
                 requested_by="wizard",
@@ -174,6 +176,7 @@ def _build_provider_import_command(
                 provider_type=provider_type,
                 source_name=source_name or None,
                 values=values,
+                operation_select=build_operation_select(values),
                 apply=apply,
                 profile=state.profile,
                 requested_by="wizard" if use_wizard else "cli",

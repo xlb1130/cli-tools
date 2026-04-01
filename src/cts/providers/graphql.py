@@ -19,6 +19,7 @@ from cts.imports.models import (
     ImportWizardField,
     ImportWizardStep,
 )
+from cts.imports.selectors import import_operation_select_arguments, import_operation_select_wizard_fields
 from cts.models import ExecutionPlan, InvokeRequest, InvokeResult, OperationDescriptor
 from cts.providers.base import ProviderError, build_help_descriptor
 from cts.providers.cli import operation_from_config
@@ -109,6 +110,7 @@ class GraphQLProvider(HTTPProvider):
                 ImportArgumentDescriptor(name="schema_url", kind="option", value_type="string", flags=["--schema-url", "schema_url"]),
                 ImportArgumentDescriptor(name="introspection", kind="option", value_type="choice", default="live", choices=["live", "disabled"]),
                 ImportArgumentDescriptor(name="mount_under", kind="option", value_type="string", flags=["--mount-under", "mount_under"]),
+                *import_operation_select_arguments(),
             ],
             wizard=ImportWizardDescriptor(
                 steps=[
@@ -122,6 +124,7 @@ class GraphQLProvider(HTTPProvider):
                             ImportWizardField(name="schema_url", label="Schema URL"),
                             ImportWizardField(name="introspection", label="Introspection", value_type="choice", default="live", choices=["live", "disabled"]),
                             ImportWizardField(name="mount_under", label="Mount prefix"),
+                            *import_operation_select_wizard_fields(),
                         ],
                     )
                 ]
@@ -145,14 +148,19 @@ class GraphQLProvider(HTTPProvider):
             "schema": schema,
         }
         mount_under = [segment for segment in str(values.get("mount_under") or source_name).split() if segment]
+        operation_select = dict(request.operation_select)
         return ImportPlan(
             provider_type=self.provider_type,
             source_name=source_name,
             summary=f"Import GraphQL source '{source_name}'",
             source_patch=source_patch,
+            operation_select=operation_select,
             post_compile_actions=[
                 ImportPostAction(action="sync_source", payload={"source_name": source_name}),
-                ImportPostAction(action="create_mounts_from_source_operations", payload={"source_name": source_name, "under": mount_under}),
+                ImportPostAction(
+                    action="create_mounts_from_source_operations",
+                    payload={"source_name": source_name, "under": mount_under, "select": operation_select},
+                ),
             ],
             preview={
                 "ok": True,
@@ -160,6 +168,7 @@ class GraphQLProvider(HTTPProvider):
                 "apply_action": "import_graphql_apply",
                 "source_name": source_name,
                 "source_config": source_patch,
+                "operation_select": operation_select,
             },
             runtime_data={
                 "progress_labels": {

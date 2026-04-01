@@ -23,6 +23,7 @@ from cts.imports.models import (
     ImportWizardField,
     ImportWizardStep,
 )
+from cts.imports.selectors import import_operation_select_arguments, import_operation_select_wizard_fields
 from cts.models import ExecutionPlan, InvokeRequest, InvokeResult, OperationDescriptor
 from cts.providers.base import ProviderError, build_help_descriptor
 
@@ -157,6 +158,7 @@ class CLIProvider:
                 ImportArgumentDescriptor(name="command_path_value", kind="option", value_type="string", flags=["--path", "command_path_value"]),
                 ImportArgumentDescriptor(name="under_values", kind="option", value_type="string_list", repeated=True, flags=["--under", "under_values"]),
                 ImportArgumentDescriptor(name="prefix", kind="option", value_type="string"),
+                *import_operation_select_arguments(),
             ],
             wizard=ImportWizardDescriptor(
                 steps=[
@@ -174,6 +176,7 @@ class CLIProvider:
                             ImportWizardField(name="save_manifest_path", label="Save manifest path"),
                             ImportWizardField(name="under_text", label="Mount prefix", help="Space-separated command path prefix."),
                             ImportWizardField(name="import_all", label="Import full CLI tree", value_type="bool", default=False),
+                            *import_operation_select_wizard_fields(),
                         ],
                     ),
                 ]
@@ -199,6 +202,7 @@ class CLIProvider:
         under_values = tuple(values.get("under_values") or shlex.split(str(values.get("under_text") or "")))
         save_manifest_path = Path(values["save_manifest_path"]) if values.get("save_manifest_path") else None
         operation_id = values.get("operation_id") or (None if values.get("import_all") else derive_operation_id_from_command(command_argv))
+        operation_select = dict(request.operation_select)
 
         if values.get("import_all"):
             legacy_plan = prepare_cli_import_tree_plan(
@@ -214,11 +218,13 @@ class CLIProvider:
                 prefix=values.get("prefix"),
                 save_manifest_path=save_manifest_path,
                 progress_callback=values.get("__progress_callback__"),
+                operation_select=operation_select,
             )
             return ImportPlan(
                 provider_type=self.provider_type,
                 source_name=source_name,
                 summary=f"Import CLI tree '{source_name}'",
+                operation_select=operation_select,
                 preview={"ok": True, "action": "import_cli_tree_preview", **legacy_plan, "apply_action": "import_cli_tree_apply"},
                 warnings=list(legacy_plan.get("warnings") or []),
                 runtime_data={"apply_strategy": "cli_tree", "legacy_plan": legacy_plan},

@@ -14,6 +14,7 @@ from cts.cli.lazy import (
     tokenize_identifier,
 )
 from cts.execution.errors import RegistryError
+from cts.operation_select import operation_matches_select
 
 
 def prepare_cli_import_tree_plan(
@@ -29,6 +30,7 @@ def prepare_cli_import_tree_plan(
     under_values: tuple[str, ...],
     prefix: Optional[str],
     save_manifest_path: Optional[Path],
+    operation_select: Optional[Dict[str, Any]] = None,
     progress_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     existing_source = app.config.sources.get(source_name)
@@ -81,6 +83,8 @@ def prepare_cli_import_tree_plan(
             title=None,
         )
         imported_operation = dict(import_result.operation)
+        if not operation_matches_select(imported_operation, operation_select):
+            continue
         imported_operations.append(imported_operation)
         source_operations[operation_id] = build_inline_source_operation(imported_operation)
 
@@ -152,6 +156,7 @@ def prepare_cli_import_tree_plan(
         },
         "manifest_write": manifest_write,
         "warnings": warnings,
+        "operation_select": dict(operation_select or {}),
     }
 
 

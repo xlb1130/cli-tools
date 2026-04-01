@@ -252,6 +252,67 @@ def test_import_mcp_apply_persists_source_and_mounts(tmp_path: Path, monkeypatch
     assert "Query train tickets" in help_result.output
 
 
+def test_import_mcp_apply_filters_mounts_with_include_and_exclude(tmp_path: Path, monkeypatch):
+    config_path = tmp_path / "cts.yaml"
+
+    def fake_bridge(source_config, app, command, primitive_type=None, target=None, args=None, timeout_seconds=None):
+        assert command == "list-primitives"
+        return {
+            "ok": True,
+            "server": "demo-server",
+            "transport_type": "sse",
+            "primitives": [
+                {
+                    "primitive_type": "tool",
+                    "name": "query_train",
+                    "description": "Query train tickets",
+                    "input_schema": {"type": "object", "properties": {"from": {"type": "string"}}},
+                },
+                {
+                    "primitive_type": "tool",
+                    "name": "cancel_order",
+                    "description": "Cancel order",
+                    "input_schema": {"type": "object", "properties": {"id": {"type": "string"}}},
+                },
+            ],
+        }
+
+    monkeypatch.setattr(mcp_cli, "_run_bridge_command", fake_bridge)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "mcp",
+            "cn12306",
+            "--server-config",
+            '{"type":"sse","url":"https://example.com/sse"}',
+            "--include",
+            "query_*",
+            "--exclude",
+            "cancel_*",
+            "--apply",
+            "--format",
+            "json",
+        ],
+        env={"HOME": str(tmp_path)},
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["tools_count"] == 2
+    assert payload["mounts_created"] == 1
+
+    app = build_app(str(config_path))
+    assert "query_train" in app.source_operations["cn12306"]
+    assert "cancel_order" in app.source_operations["cn12306"]
+    assert app.catalog.find_by_path(["cn12306", "query_train"]) is not None
+    assert app.catalog.find_by_path(["cn12306", "cancel_order"]) is None
+
+
 def test_mount_short_help_prefers_description_when_summary_is_command_label():
     mount = SimpleNamespace(
         summary="query_train",

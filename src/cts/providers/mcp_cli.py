@@ -19,6 +19,7 @@ from cts.imports.models import (
     ImportWizardField,
     ImportWizardStep,
 )
+from cts.imports.selectors import import_operation_select_arguments, import_operation_select_wizard_fields
 from cts.models import ExecutionPlan, InvokeRequest, InvokeResult, OperationDescriptor
 from cts.providers.base import ProviderError, build_help_descriptor
 from cts.providers.cli import load_manifest, manifest_operations_from_data, operation_from_config
@@ -38,6 +39,7 @@ class MCPCLIProvider:
                 ImportArgumentDescriptor(name="server_name", kind="option", value_type="string"),
                 ImportArgumentDescriptor(name="config_file", kind="option", value_type="path"),
                 ImportArgumentDescriptor(name="under_values", kind="option", value_type="string_list", repeated=True, flags=["--under", "under_values"]),
+                *import_operation_select_arguments(),
             ],
             wizard=ImportWizardDescriptor(
                 steps=[
@@ -50,6 +52,7 @@ class MCPCLIProvider:
                             ImportWizardField(name="server_name", label="Existing server name"),
                             ImportWizardField(name="config_file", label="servers.json path", value_type="path"),
                             ImportWizardField(name="under_text", label="Mount prefix"),
+                            *import_operation_select_wizard_fields(),
                         ],
                     )
                 ]
@@ -100,15 +103,24 @@ class MCPCLIProvider:
             "servers_file": str(servers_path),
             "under": under_values,
         }
+        operation_select = dict(request.operation_select)
         return ImportPlan(
             provider_type=self.provider_type,
             source_name=source_name,
             summary=f"Import MCP source '{source_name}'",
             source_patch=source_patch,
+            operation_select=operation_select,
             files_to_write=files_to_write,
             post_compile_actions=[
                 ImportPostAction(action="sync_source", payload={"source_name": source_name}),
-                ImportPostAction(action="create_mounts_from_source_operations", payload={"source_name": source_name, "under": under_values or [source_name]}),
+                ImportPostAction(
+                    action="create_mounts_from_source_operations",
+                    payload={
+                        "source_name": source_name,
+                        "under": under_values or [source_name],
+                        "select": operation_select,
+                    },
+                ),
             ],
             preview=preview,
             runtime_data={

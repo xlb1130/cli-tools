@@ -919,6 +919,45 @@ def test_import_cli_all_recursively_imports_leaf_commands(tmp_path: Path):
     assert remove_mount.operation.id == "admin_remove_user"
 
 
+def test_import_cli_all_filters_operations_during_import(tmp_path: Path):
+    script_path = tmp_path / "aac_cli.py"
+    script_path.write_text(CLI_TREE_SCRIPT, encoding="utf-8")
+    config_path = tmp_path / "cts.yaml"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "cli",
+            "aac",
+            sys.executable,
+            str(script_path),
+            "--all",
+            "--include",
+            "*add*",
+            "--exclude",
+            "*remove*",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["action"] == "import_cli_tree_apply"
+    assert payload["operation_count"] == 1
+    assert payload["mount_count"] == 1
+
+    app = build_app(str(config_path))
+    assert "admin_add_user" in app.source_operations["aac"]
+    assert "admin_remove_user" not in app.source_operations["aac"]
+    assert app.catalog.find_by_path(["aac", "admin", "add-user"]) is not None
+    assert app.catalog.find_by_path(["aac", "admin", "remove-user"]) is None
+
+
 def test_import_cli_all_uses_multistep_progress(tmp_path: Path, monkeypatch):
     script_path = tmp_path / "aac_cli.py"
     script_path.write_text(CLI_TREE_SCRIPT, encoding="utf-8")

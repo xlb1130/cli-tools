@@ -65,6 +65,7 @@ class ImportRequest(BaseModel):
     mode: str = "direct"
     source_name: Optional[str] = None
     values: Dict[str, Any] = Field(default_factory=dict)
+    operation_select: Dict[str, Any] = Field(default_factory=dict)
     apply: bool = False
     target_file: Optional[str] = None
     profile: Optional[str] = None
@@ -90,6 +91,7 @@ class ImportPlan(BaseModel):
     source_name: str
     summary: Optional[str] = None
     source_patch: Dict[str, Any] = Field(default_factory=dict)
+    operation_select: Dict[str, Any] = Field(default_factory=dict)
     mount_patches: List[Dict[str, Any]] = Field(default_factory=list)
     files_to_write: List[ImportFileWrite] = Field(default_factory=list)
     post_compile_actions: List[ImportPostAction] = Field(default_factory=list)
