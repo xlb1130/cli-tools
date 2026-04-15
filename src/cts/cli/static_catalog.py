@@ -302,8 +302,8 @@ def _static_build_generated_mount(mount, source_config, operation) -> StaticMoun
         stable_name=stable_name,
         summary=operation.title,
         description=operation.description,
-        source_config=source_config,
-        mount_config=mount,
+        source_config=_compact_source_config_for_index(source_config),
+        mount_config=_compact_mount_config_for_index(mount),
         generated=True,
         generated_from=str(mount.get("id")),
     )
@@ -330,8 +330,8 @@ def _static_build_mount_record(mount, source_config, operation, generated: bool)
         stable_name=stable_name,
         summary=help_config.get("summary") or operation.title,
         description=help_config.get("description") or operation.description,
-        source_config=source_config,
-        mount_config=mount,
+        source_config=_compact_source_config_for_index(source_config),
+        mount_config=_compact_mount_config_for_index(mount),
         generated=generated,
     )
 
@@ -537,3 +537,49 @@ def _static_operation_from_config(
         supported_surfaces=list(operation.get("supported_surfaces", ["cli", "invoke"])),
         provider_config=provider_config,
     )
+
+
+def _compact_source_config_for_index(source_config: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(source_config, dict):
+        return {}
+    payload: Dict[str, Any] = {}
+    source_type = source_config.get("type")
+    if source_type is not None:
+        payload["type"] = source_type
+    expose_to_surfaces = source_config.get("expose_to_surfaces")
+    if isinstance(expose_to_surfaces, list) and expose_to_surfaces:
+        payload["expose_to_surfaces"] = list(expose_to_surfaces)
+    return payload
+
+
+def _compact_mount_config_for_index(mount_config: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(mount_config, dict):
+        return {}
+    payload: Dict[str, Any] = {}
+
+    params = mount_config.get("params")
+    if isinstance(params, dict) and params:
+        payload["params"] = params
+
+    help_config = mount_config.get("help")
+    compact_help: Dict[str, Any] = {}
+    if isinstance(help_config, dict):
+        param_overrides = help_config.get("param_overrides")
+        if isinstance(param_overrides, dict) and param_overrides:
+            compact_help["param_overrides"] = param_overrides
+        examples = help_config.get("examples")
+        if isinstance(examples, list) and examples:
+            compact_help["examples"] = examples
+        notes = help_config.get("notes")
+        if isinstance(notes, list) and notes:
+            compact_help["notes"] = notes
+    if compact_help:
+        payload["help"] = compact_help
+
+    machine_config = mount_config.get("machine")
+    if isinstance(machine_config, dict):
+        expose_via = machine_config.get("expose_via")
+        if isinstance(expose_via, list) and expose_via:
+            payload["machine"] = {"expose_via": expose_via}
+
+    return payload

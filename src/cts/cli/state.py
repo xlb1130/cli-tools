@@ -11,6 +11,7 @@ from cts.cli.command_registry import resolve_auto_mode, resolve_command_scopes, 
 
 
 StaticCatalogBuilder = Callable[[Any], Any]
+_PROCESS_STATIC_CATALOG_CACHE: Dict[str, Any] = {}
 
 
 @dataclass
@@ -136,14 +137,27 @@ class CLIState:
             from cts.config.loader import load_raw_config
 
             explicit_config_path = str(self.config_path) if self.config_path else None
+            cache_key = explicit_config_path or f"cwd:{Path.cwd().resolve()}"
+            process_cached_catalog = _PROCESS_STATIC_CATALOG_CACHE.get(cache_key)
+            if process_cached_catalog is not None:
+                self._static_catalog = process_cached_catalog
+                return self._static_catalog
+
             cached_catalog = load_command_index(explicit_config_path)
             if cached_catalog is not None:
                 self._static_catalog = cached_catalog
+                _PROCESS_STATIC_CATALOG_CACHE[cache_key] = cached_catalog
                 return self._static_catalog
 
             loaded = load_raw_config(explicit_config_path)
             self._static_catalog = self.static_catalog_builder(loaded)
-            write_command_index(explicit_config_path, loaded, self._static_catalog)
+            write_command_index(
+                explicit_config_path,
+                loaded,
+                self._static_catalog,
+                help_mode=self.help_requested,
+            )
+            _PROCESS_STATIC_CATALOG_CACHE[cache_key] = self._static_catalog
         except Exception:
             self._static_catalog = None
         return self._static_catalog

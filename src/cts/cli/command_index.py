@@ -33,7 +33,13 @@ def load_command_index(explicit_config_path: Optional[str]):
         return None
 
 
-def write_command_index(explicit_config_path: Optional[str], loaded, catalog) -> Path:
+def write_command_index(
+    explicit_config_path: Optional[str],
+    loaded,
+    catalog,
+    *,
+    help_mode: bool = False,
+) -> Path:
     from cts.cli.static_catalog import serialize_static_help_catalog, static_catalog_dependency_paths
 
     dependencies = static_catalog_dependency_paths(loaded)
@@ -41,12 +47,15 @@ def write_command_index(explicit_config_path: Optional[str], loaded, catalog) ->
         "version": INDEX_VERSION,
         "kind": "cts_cli_command_index",
         "config_path": str(explicit_config_path) if explicit_config_path else None,
-        "dependencies": [_snapshot_path(path) for path in dependencies],
+        "dependencies": [_snapshot_path(path, help_mode=help_mode) for path in dependencies],
         "catalog": serialize_static_help_catalog(catalog),
     }
     path = resolve_command_index_path(explicit_config_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
     return path
 
 
@@ -117,14 +126,17 @@ def inspect_command_index(explicit_config_path: Optional[str]) -> Dict[str, Any]
     return status
 
 
-def _snapshot_path(path: Path) -> Dict[str, Any]:
+def _snapshot_path(path: Path, *, help_mode: bool = False) -> Dict[str, Any]:
     resolved = path.expanduser().resolve()
     exists = resolved.exists()
     stat = resolved.stat() if exists else None
+    is_discovery_snapshot = _is_discovery_snapshot_path(resolved)
+    weak_mtime = bool(help_mode and is_discovery_snapshot)
     return {
         "path": str(resolved),
         "exists": exists,
         "mtime_ns": getattr(stat, "st_mtime_ns", None),
+        "weak_mtime": weak_mtime,
         "size": getattr(stat, "st_size", None),
     }
 
@@ -161,7 +173,8 @@ def _dependency_statuses(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             statuses.append(status)
             continue
         stat = path.stat()
-        if int(item.get("mtime_ns") or -1) != int(stat.st_mtime_ns):
+        weak_mtime = bool(item.get("weak_mtime"))
+        if not weak_mtime and int(item.get("mtime_ns") or -1) != int(stat.st_mtime_ns):
             status["matches"] = False
             status["reason"] = "mtime_changed"
         elif int(item.get("size") or -1) != int(stat.st_size):
@@ -173,3 +186,7 @@ def _dependency_statuses(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         status["actual_size"] = stat.st_size
         statuses.append(status)
     return statuses
+
+
+def _is_discovery_snapshot_path(path: Path) -> bool:
+    return path.suffix.lower() == ".json" and "discovery" in path.parts

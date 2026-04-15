@@ -183,7 +183,11 @@ class CatalogBackedGroup(click.Group):
             next_prefix = self.path_prefix + (cmd_name,)
             mount = catalog.find_by_path(next_prefix)
             if mount:
-                if state.help_requested and _static_help_needs_runtime_fallback(mount):
+                if (
+                    state.help_requested
+                    and _static_help_needs_runtime_fallback(mount)
+                    and _should_runtime_help_fallback(state, next_prefix)
+                ):
                     runtime_command = _build_runtime_help_command(ctx, next_prefix, mount)
                     if runtime_command is not None:
                         return runtime_command
@@ -231,6 +235,11 @@ def _static_help_needs_runtime_fallback(mount: Any) -> bool:
     input_schema = getattr(getattr(mount, "operation", None), "input_schema", None) or {}
     properties = input_schema.get("properties") if isinstance(input_schema, dict) else None
     return not bool(properties)
+
+
+def _should_runtime_help_fallback(state: CLIState, command_path: tuple[str, ...]) -> bool:
+    requested = tuple(getattr(state, "requested_command_path", ()) or ())
+    return bool(requested) and requested == command_path
 
 
 def _build_runtime_help_command(ctx: click.Context, command_path: tuple[str, ...], mount: Any):
