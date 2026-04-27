@@ -8,7 +8,9 @@ from cts.execution.logging import emit_app_event, utc_now_iso
 
 
 def discover_source(app, source_name: str, source_config, *, mode: str) -> Dict[str, Any]:
-    cached_snapshot = app.discovery_store.load_source_snapshot(source_name)
+    source_origin_path = app.origin_file_for(source_config)
+    source_origin = str(source_origin_path.resolve()) if source_origin_path else None
+    cached_snapshot = app.discovery_store.load_source_snapshot(source_name, source_origin=source_origin)
     if mode == "compile" and source_name not in app.sync_baselines:
         app.sync_baselines[source_name] = dict(cached_snapshot["snapshot"]) if cached_snapshot else None
     cache_decision = cache_decision_for_source(source_config, mode=mode, cached=cached_snapshot)
@@ -105,14 +107,30 @@ def discover_source(app, source_name: str, source_config, *, mode: str) -> Dict[
         )
         operations = list(completed_payload.get("operations", operations))
         schema_index = capture_schema_index(app, source_name, source_config, provider, operations)
-        snapshot_record = app.discovery_store.write_source_snapshot(
-            source_name=source_name,
-            provider_type=source_config.type,
-            source_origin=str(app.origin_file_for(source_config)) if app.origin_file_for(source_config) else None,
-            operations=operations,
-            schema_index=schema_index,
-            mode=mode,
-        )
+        snapshot_record = None
+        snapshot_write_error = None
+        try:
+            snapshot_record = app.discovery_store.write_source_snapshot(
+                source_name=source_name,
+                provider_type=source_config.type,
+                source_origin=source_origin,
+                operations=operations,
+                schema_index=schema_index,
+                mode=mode,
+            )
+        except Exception as snapshot_exc:  # pragma: no cover - defensive path
+            snapshot_write_error = str(snapshot_exc)
+            emit_app_event(
+                app,
+                event="discover_snapshot_write_failed",
+                level="WARNING",
+                source=source_name,
+                data={
+                    "provider_type": source_config.type,
+                    "mode": mode,
+                    "error": snapshot_write_error,
+                },
+            )
         baseline_snapshot = None
         baseline_defined = False
         if mode == "sync":
@@ -120,7 +138,7 @@ def discover_source(app, source_name: str, source_config, *, mode: str) -> Dict[
             baseline_snapshot = app.sync_baselines.get(source_name)
         if baseline_snapshot is None and cached_snapshot and not baseline_defined:
             baseline_snapshot = cached_snapshot["snapshot"]
-        drift = compare_discovery_snapshots(baseline_snapshot, snapshot_record["snapshot"])
+        drift = compare_discovery_snapshots(baseline_snapshot, snapshot_record["snapshot"]) if snapshot_record else None
         state = {
             "source": source_name,
             "provider_type": source_config.type,
@@ -130,29 +148,31 @@ def discover_source(app, source_name: str, source_config, *, mode: str) -> Dict[
             "mode": mode,
             "operation_count": len(operations),
             "schema_count": len(schema_index),
-            "snapshot_path": str(snapshot_record["path"]),
-            "snapshot_fingerprint": snapshot_record["snapshot"].get("snapshot_fingerprint"),
-            "generated_at": snapshot_record["snapshot"].get("generated_at"),
+            "snapshot_path": str(snapshot_record["path"]) if snapshot_record else None,
+            "snapshot_fingerprint": snapshot_record["snapshot"].get("snapshot_fingerprint") if snapshot_record else None,
+            "generated_at": snapshot_record["snapshot"].get("generated_at") if snapshot_record else utc_now_iso(),
             "error": None,
             "discovery_strategy": "live",
-            "cache_status": "refreshed",
+            "cache_status": "refreshed" if snapshot_record else "write_failed",
             "cache_age_seconds": 0,
+            "snapshot_write_error": snapshot_write_error,
             "drift": drift,
         }
         apply_source_state(app, source_name, source_config, operations, schema_index, state)
         app.discovery_errors.pop(source_name, None)
-        emit_app_event(
-            app,
-            event="discover_snapshot_written",
-            source=source_name,
-            data={
-                "provider_type": source_config.type,
-                "mode": mode,
-                "snapshot_path": str(snapshot_record["path"]),
-                "schema_count": len(schema_index),
-            },
-        )
-        if drift.get("changed"):
+        if snapshot_record:
+            emit_app_event(
+                app,
+                event="discover_snapshot_written",
+                source=source_name,
+                data={
+                    "provider_type": source_config.type,
+                    "mode": mode,
+                    "snapshot_path": str(snapshot_record["path"]),
+                    "schema_count": len(schema_index),
+                },
+            )
+        if drift and drift.get("changed"):
             emit_app_event(
                 app,
                 event="drift_detected",
@@ -166,7 +186,10 @@ def discover_source(app, source_name: str, source_config, *, mode: str) -> Dict[
                 },
             )
         if mode == "sync":
-            app.sync_baselines[source_name] = dict(snapshot_record["snapshot"])
+            if snapshot_record:
+                app.sync_baselines[source_name] = dict(snapshot_record["snapshot"])
+            else:
+                app.sync_baselines[source_name] = None
         return dict(state)
     except Exception as exc:  # pragma: no cover
         app.discovery_errors[source_name] = str(exc)
@@ -203,7 +226,7 @@ def discover_source(app, source_name: str, source_config, *, mode: str) -> Dict[
             snapshot_fingerprint = previous_state.get("snapshot_fingerprint")
             generated_at = previous_state.get("generated_at")
         else:
-            cached = app.discovery_store.load_source_snapshot(source_name)
+            cached = app.discovery_store.load_source_snapshot(source_name, source_origin=source_origin)
             if cached:
                 fallback = "cache"
                 operations = cached["operations"]

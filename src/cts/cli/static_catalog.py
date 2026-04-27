@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import asdict
@@ -176,7 +177,7 @@ def static_catalog_dependency_paths(loaded) -> List[Path]:
         add_path(manifest_path)
         source_type = str(source.get("type") or "")
         if source_type == "mcp" and manifest_path is None:
-            add_path(_static_source_snapshot_path(str(source_name), loaded))
+            add_path(_static_source_snapshot_path(str(source_name), source, loaded))
     return dependencies
 
 
@@ -431,7 +432,9 @@ def _static_manifest_operations_from_data(source_name: str, provider_type: str, 
 
 
 def _static_cached_snapshot_operations(source_name: str, loaded) -> List[StaticOperationRecord]:
-    snapshot_path = _static_source_snapshot_path(source_name, loaded)
+    raw_sources = (getattr(loaded, "raw", None) or {}).get("sources") or {}
+    source = raw_sources.get(source_name) if isinstance(raw_sources, dict) else None
+    snapshot_path = _static_source_snapshot_path(source_name, source if isinstance(source, dict) else None, loaded)
     if snapshot_path is None or not snapshot_path.exists():
         return []
 
@@ -474,10 +477,10 @@ def _static_cached_snapshot_operations(source_name: str, loaded) -> List[StaticO
     return operations
 
 
-def _static_source_snapshot_path(source_name: str, loaded) -> Optional[Path]:
+def _static_source_snapshot_path(source_name: str, source: Optional[Dict[str, Any]], loaded) -> Optional[Path]:
     app_config = loaded.raw.get("app") or {}
     cache_dir = _static_optional_path(app_config.get("cache_dir"), loaded)
-    return (cache_dir / "discovery" / f"{_static_safe_name(source_name)}.json").resolve()
+    return (cache_dir / "discovery" / _static_snapshot_file_name(source_name, source, loaded)).resolve()
 
 
 def _static_manifest_path(source: Dict[str, Any], loaded) -> Optional[Path]:
@@ -511,6 +514,22 @@ def _static_optional_path(raw_path: Optional[str], loaded) -> Path:
 def _static_safe_name(value: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
     return normalized or "default"
+
+
+def _static_snapshot_file_name(source_name: str, source: Optional[Dict[str, Any]], loaded) -> str:
+    source_origin = None
+    if isinstance(source, dict):
+        source_origin = source.get("__origin_file__")
+    source_scope = str(loaded.root_paths[-1].resolve()) if getattr(loaded, "root_paths", None) else None
+    identity_payload = {
+        "source": source_name,
+        "source_origin": source_origin,
+        "source_scope": source_scope,
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(identity_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:16]
+    return f"{_static_safe_name(source_name)}--{fingerprint}.json"
 
 
 def _static_operation_from_config(

@@ -168,6 +168,7 @@ def discover_cli_help_tree(
 ) -> Dict[str, Any]:
     queue: List[List[str]] = [list(command_argv)]
     seen: set[tuple[str, ...]] = set()
+    scheduled: set[tuple[str, ...]] = {tuple(command_argv)}
     groups: List[List[str]] = []
     leaves: List[Dict[str, Any]] = []
     warnings: List[str] = []
@@ -203,8 +204,10 @@ def discover_cli_help_tree(
                 )
             for subcommand in node.subcommands:
                 candidate = current + [subcommand]
-                if tuple(candidate) not in seen:
+                candidate_key = tuple(candidate)
+                if candidate_key not in scheduled:
                     queue.append(candidate)
+                    scheduled.add(candidate_key)
             continue
         if relative_tokens:
             leaves.append({"command_argv": list(current), "relative_tokens": relative_tokens})

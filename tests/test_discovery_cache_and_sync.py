@@ -34,6 +34,10 @@ def _cli_manifest_operation(operation_id: str, input_schema: dict) -> dict:
     }
 
 
+def _snapshot_files_for_source(cache_dir: Path, source_name: str) -> list[Path]:
+    return sorted((cache_dir / "discovery").glob(f"{source_name}--*.json"))
+
+
 def test_sync_writes_report_and_capability_snapshot(tmp_path: Path):
     cache_dir = tmp_path / "cache"
     state_dir = tmp_path / "state"
@@ -144,8 +148,8 @@ mounts:
     first_app = build_app(str(config_path))
     assert first_app.catalog.find_by_id("demo.bing_search") is not None
 
-    snapshot_path = cache_dir / "discovery" / "remote_mcp.json"
-    assert snapshot_path.exists()
+    snapshot_files = _snapshot_files_for_source(cache_dir, "remote_mcp")
+    assert len(snapshot_files) == 1
 
     monkeypatch.setattr(mcp_cli, "_run_bridge_command", fake_bridge_failure)
     second_app = build_app(str(config_path))
@@ -273,48 +277,58 @@ mounts:
     assert app.discovery_state["remote_mcp"]["cache_status"] == "miss"
     assert app.catalog.find_by_id("demo.bing_search") is None
 
-    snapshot_path = cache_dir / "discovery" / "remote_mcp.json"
+    from cts.discovery.store import DiscoveryStore
+
+    snapshot_files = _snapshot_files_for_source(cache_dir, "remote_mcp")
+    assert not snapshot_files
+    snapshot_path = DiscoveryStore(app).source_snapshot_path(
+        "remote_mcp",
+        source_origin=str(config_path.resolve()),
+    )
     snapshot_path.parent.mkdir(parents=True, exist_ok=True)
-    snapshot_path.write_text(
-        json.dumps(
+    payload = {
+        "version": 1,
+        "kind": "discovery_snapshot",
+        "source": "remote_mcp",
+        "provider_type": "mcp",
+        "source_origin": str(config_path.resolve()),
+        "source_scope": str(config_path.resolve()),
+        "mode": "sync",
+        "generated_at": "2026-03-28T16:00:00+00:00",
+        "operation_count": 1,
+        "schema_count": 1,
+        "operations": [
             {
-                "version": 1,
-                "kind": "discovery_snapshot",
+                "id": "bing_search",
                 "source": "remote_mcp",
                 "provider_type": "mcp",
-                "mode": "sync",
-                "generated_at": "2026-03-28T16:00:00+00:00",
-                "operation_count": 1,
-                "schema_count": 1,
-                "operations": [
-                    {
-                        "id": "bing_search",
-                        "source": "remote_mcp",
-                        "provider_type": "mcp",
-                        "title": "bing_search",
-                        "stable_name": "demo.bing.search",
-                        "description": "Search the web",
-                        "kind": "action",
-                        "tags": [],
-                        "group": None,
-                        "risk": "read",
-                        "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}},
-                        "output_schema": None,
-                        "examples": [],
-                        "supported_surfaces": ["cli", "invoke", "mcp"],
-                        "transport_hints": {},
-                        "provider_config": {},
-                    }
-                ],
-                "schema_index": {
-                    "bing_search": {
-                        "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}},
-                        "provenance": {"strategy": "probed", "origin": "demo", "confidence": 0.95},
-                    }
-                },
-                "operation_fingerprints": {"bing_search": "sha256:test"},
-                "snapshot_fingerprint": "sha256:test",
-            },
+                "title": "bing_search",
+                "stable_name": "demo.bing.search",
+                "description": "Search the web",
+                "kind": "action",
+                "tags": [],
+                "group": None,
+                "risk": "read",
+                "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}},
+                "output_schema": None,
+                "examples": [],
+                "supported_surfaces": ["cli", "invoke", "mcp"],
+                "transport_hints": {},
+                "provider_config": {},
+            }
+        ],
+        "schema_index": {
+            "bing_search": {
+                "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}},
+                "provenance": {"strategy": "probed", "origin": "demo", "confidence": 0.95},
+            }
+        },
+        "operation_fingerprints": {"bing_search": "sha256:test"},
+        "snapshot_fingerprint": "sha256:test",
+    }
+    snapshot_path.write_text(
+        json.dumps(
+            payload,
             ensure_ascii=False,
             indent=2,
         ),
@@ -834,3 +848,133 @@ mounts:
     assert inspect_drift_payload["items"][0]["governance_state"]["status"] == "breaking"
     assert inspect_drift_payload["items"][0]["governance_state"]["affected_mount_count"] == 1
     assert inspect_drift_payload["items"][0]["governance_state"]["blocked_mount_count"] == 1
+
+
+def test_discovery_snapshot_identity_isolated_by_config_origin(tmp_path: Path, monkeypatch):
+    cache_dir = tmp_path / "cache"
+    state_dir = tmp_path / "state"
+
+    manifest_a = tmp_path / "manifest-a.json"
+    manifest_b = tmp_path / "manifest-b.json"
+    _write_manifest(manifest_a, [_cli_manifest_operation("from_a", {"type": "object", "properties": {}})])
+    _write_manifest(manifest_b, [_cli_manifest_operation("from_b", {"type": "object", "properties": {}})])
+
+    config_a = tmp_path / "a.yaml"
+    config_a.write_text(
+        f"""
+version: 1
+app:
+  cache_dir: {cache_dir}
+  state_dir: {state_dir}
+sources:
+  shared:
+    type: cli
+    executable: python3
+    discovery:
+      mode: manifest
+      manifest: {manifest_a}
+mounts:
+  - id: shared
+    source: shared
+    select:
+      include: ["*"]
+    command:
+      under: [shared]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    config_b = tmp_path / "b.yaml"
+    config_b.write_text(
+        f"""
+version: 1
+app:
+  cache_dir: {cache_dir}
+  state_dir: {state_dir}
+sources:
+  shared:
+    type: mcp
+    url: https://example.com/mcp
+    server: demo
+    discovery:
+      mode: cache_only
+mounts:
+  - id: shared
+    source: shared
+    select:
+      include: ["*"]
+    command:
+      under: [shared]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    app_a = build_app(str(config_a))
+    assert app_a.catalog.find_by_id("shared.from_a") is not None
+    snapshot_files = _snapshot_files_for_source(cache_dir, "shared")
+    assert len(snapshot_files) == 1
+
+    def fail_bridge(*args, **kwargs):
+        raise RuntimeError("cache_only should not trigger live discovery")
+
+    monkeypatch.setattr(mcp_cli, "_run_bridge_command", fail_bridge)
+    app_b = build_app(str(config_b))
+    assert app_b.catalog.find_by_id("shared.from_a") is None
+    assert app_b.discovery_state["shared"]["cache_status"] == "miss"
+
+
+def test_snapshot_write_failure_keeps_live_operations_without_cache_fallback(tmp_path: Path, monkeypatch):
+    cache_dir = tmp_path / "cache"
+    state_dir = tmp_path / "state"
+    manifest_path = tmp_path / "manifest.json"
+    config_path = tmp_path / "cts.yaml"
+    config_path.write_text(
+        f"""
+version: 1
+app:
+  cache_dir: {cache_dir}
+  state_dir: {state_dir}
+sources:
+  demo_cli:
+    type: cli
+    executable: python3
+    discovery:
+      mode: manifest
+      manifest: {manifest_path}
+mounts:
+  - id: demo
+    source: demo_cli
+    select:
+      include: ["*"]
+    command:
+      under: [demo]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    _write_manifest(manifest_path, [_cli_manifest_operation("old_op", {"type": "object", "properties": {}})])
+    baseline_app = build_app(str(config_path))
+    assert baseline_app.catalog.find_by_id("demo.old_op") is not None
+
+    _write_manifest(manifest_path, [_cli_manifest_operation("new_op", {"type": "object", "properties": {}})])
+
+    from cts.discovery.store import DiscoveryStore
+
+    original_write_snapshot = DiscoveryStore.write_source_snapshot
+
+    def fail_write_snapshot(self, **kwargs):
+        raise PermissionError("read-only cache dir")
+
+    monkeypatch.setattr(DiscoveryStore, "write_source_snapshot", fail_write_snapshot)
+    try:
+        app = build_app(str(config_path))
+    finally:
+        monkeypatch.setattr(DiscoveryStore, "write_source_snapshot", original_write_snapshot)
+
+    assert app.catalog.find_by_id("demo.new_op") is not None
+    assert app.catalog.find_by_id("demo.old_op") is None
+    assert app.discovery_state["demo_cli"]["discovery_strategy"] == "live"
+    assert app.discovery_state["demo_cli"]["cache_status"] == "write_failed"

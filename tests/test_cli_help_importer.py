@@ -9,11 +9,14 @@ import click
 from click.testing import CliRunner
 
 import cts.cli.execution_runtime as execution_runtime
+import cts.cli.lazy as lazy_module
 from cts.cli.command_registry import should_load_drift_governance
 import cts.cli.root as root_module
 from cts.app import build_app
+from cts.cli.import_planning import discover_cli_help_tree
 from cts.cli.root import main
 from cts.execution.help_compiler import build_click_params, extract_request_args
+from cts.importers.cli_help import extract_help_subcommands, parse_cli_option_spec
 
 
 CLI_SCRIPT = """
@@ -224,7 +227,7 @@ mounts:
     def fail_build_app(*args, **kwargs):
         raise AssertionError("leaf --help should not build the full app")
 
-    monkeypatch.setattr(root_module, "build_app", fail_build_app)
+    monkeypatch.setattr(lazy_module, "build_app", fail_build_app)
     monkeypatch.setattr(
         root_module,
         "_parse_root_argv",
@@ -290,7 +293,7 @@ mounts:
     def fail_build_app(*args, **kwargs):
         raise AssertionError("group --help should not build the full app")
 
-    monkeypatch.setattr(root_module, "build_app", fail_build_app)
+    monkeypatch.setattr(lazy_module, "build_app", fail_build_app)
     monkeypatch.setattr(
         root_module,
         "_parse_root_argv",
@@ -882,6 +885,94 @@ if __name__ == "__main__":
 """
 
 
+API_STYLE_CLI_SCRIPT = """
+import sys
+
+
+ROOT_HELP = \"\"\"Usage: demoapi [options] <resource> <action>
+
+Demo API Resources:
+  traces
+
+Commands:
+  __schema                Show API spec metadata
+  <resource> --help       Show actions for a resource
+  <resource> <action> --help  Show options for an action
+
+Options:
+  --json                  Output as JSON
+  -h, --help              Show help
+\"\"\"
+
+
+TRACES_HELP = \"\"\"Usage: demoapi traces [options] [command]
+
+Operations for traces
+
+Options:
+  -h, --help              Show help
+
+Commands:
+  get <trace-id>          Get a trace
+  list                    List traces
+\"\"\"
+
+
+TRACE_LIST_HELP = \"\"\"Usage: demoapi traces list [options]
+
+List traces
+
+Options:
+  --environment <string[]> Optional environment filters
+  --limit <integer>       Limit items
+  -h, --help              Show help
+\"\"\"
+
+
+TRACE_GET_HELP = \"\"\"Usage: demoapi traces get [options] <trace-id>
+
+Get a trace
+
+Options:
+  -h, --help              Show help
+\"\"\"
+
+
+SCHEMA_HELP = \"\"\"Usage: demoapi __schema [options]
+
+Print indexed operations
+
+Options:
+  --commands              List all <resource> <action> commands
+  -h, --help              Show help
+\"\"\"
+
+
+def main():
+    args = sys.argv[1:]
+    if args == ["--help"]:
+        print(ROOT_HELP)
+        return
+    if args == ["traces", "--help"]:
+        print(TRACES_HELP)
+        return
+    if args == ["traces", "list", "--help"]:
+        print(TRACE_LIST_HELP)
+        return
+    if args == ["traces", "get", "--help"]:
+        print(TRACE_GET_HELP)
+        return
+    if args == ["__schema", "--help"]:
+        print(SCHEMA_HELP)
+        return
+    raise SystemExit(f"unsupported argv: {args}")
+
+
+if __name__ == "__main__":
+    main()
+"""
+
+
 def test_import_cli_all_recursively_imports_leaf_commands(tmp_path: Path):
     script_path = tmp_path / "aac_cli.py"
     script_path.write_text(CLI_TREE_SCRIPT, encoding="utf-8")
@@ -1064,3 +1155,146 @@ def test_import_cli_all_group_help_uses_original_descriptions(tmp_path: Path):
     admin_help = runner.invoke(main, ["--config", str(config_path), "aac", "admin", "--help"])
     assert admin_help.exit_code == 0
     assert "Administrative commands." in admin_help.output
+
+
+def test_extract_help_subcommands_reads_resource_sections():
+    help_text = """Usage: langfuse api [options] <resource> <action>
+
+Langfuse API Resources:
+  annotation-queues
+  traces
+
+Commands:
+  __schema                Show API spec metadata
+  <resource> --help       Show actions for a resource
+  <resource> <action> --help  Show options for an action
+
+Options:
+  --json                  Output as JSON
+  -h, --help              Show help
+"""
+
+    assert extract_help_subcommands(help_text) == ["__schema", "annotation-queues", "traces"]
+
+
+def test_parse_cli_option_spec_supports_lowercase_metavars():
+    item = parse_cli_option_spec("--limit <integer>", "Limit items")
+
+    assert item is not None
+    assert item["kind"] == "value"
+    assert item["repeatable"] is False
+    assert item["schema"]["type"] == "integer"
+    assert item["schema"]["description"] == "Limit items"
+
+
+def test_parse_cli_option_spec_supports_array_metavars():
+    item = parse_cli_option_spec("--environment <string[]>", "Optional environment filters")
+
+    assert item is not None
+    assert item["kind"] == "value"
+    assert item["repeatable"] is True
+    assert item["schema"]["type"] == "array"
+    assert item["schema"]["items"]["type"] == "string"
+    assert item["schema"]["description"] == "Optional environment filters"
+
+
+def test_extract_help_subcommands_ignores_wrapped_command_descriptions():
+    help_text = """Usage: langfuse api dataset-items [options] [command]
+
+Operations for dataset-items
+
+Options:
+  -h, --help             display help for command
+
+Commands:
+  create [options]       Create a dataset item
+  delete [options] <id>  Delete a dataset item and all its run items. This
+                         action is irreversible.
+  get [options] <id>     Get a dataset item
+  list [options]         Get dataset items. Optionally specify a version to get
+                         the items as they existed at that point in time.
+                         Note: If version parameter is provided, datasetName
+                         must also be provided.
+  help [command]         display help for command
+"""
+
+    assert extract_help_subcommands(help_text) == ["create", "delete", "get", "list"]
+
+
+def test_discover_cli_help_tree_supports_resource_driven_clis(tmp_path: Path):
+    script_path = tmp_path / "demoapi.py"
+    script_path.write_text(API_STYLE_CLI_SCRIPT, encoding="utf-8")
+
+    tree = discover_cli_help_tree([sys.executable, str(script_path)], help_flag="--help")
+
+    assert tree["groups"] == [{"path": ["traces"], "summary": "Operations for traces", "description": "Operations for traces"}]
+    assert {tuple(item["relative_tokens"]) for item in tree["leaves"]} == {
+        ("__schema",),
+        ("traces", "get"),
+        ("traces", "list"),
+    }
+
+
+def test_import_cli_all_recurses_into_resource_sections(tmp_path: Path):
+    script_path = tmp_path / "demoapi.py"
+    script_path.write_text(API_STYLE_CLI_SCRIPT, encoding="utf-8")
+    config_path = tmp_path / "cts.yaml"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "cli",
+            "demoapi",
+            sys.executable,
+            str(script_path),
+            "--all",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["operation_count"] == 3
+
+    app = build_app(str(config_path))
+    assert app.catalog.find_by_path(["demoapi", "traces", "list"]) is not None
+    assert app.catalog.find_by_path(["demoapi", "traces", "get"]) is not None
+
+
+def test_import_cli_all_preserves_lowercase_and_array_parameter_types(tmp_path: Path):
+    script_path = tmp_path / "demoapi.py"
+    script_path.write_text(API_STYLE_CLI_SCRIPT, encoding="utf-8")
+    config_path = tmp_path / "cts.yaml"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "--config",
+            str(config_path),
+            "import",
+            "cli",
+            "demoapi",
+            sys.executable,
+            str(script_path),
+            "--all",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+
+    app = build_app(str(config_path))
+    operation = app.source_operations["demoapi"]["traces_list"]
+    properties = operation.input_schema["properties"]
+
+    assert properties["limit"]["type"] == "integer"
+    assert properties["environment"]["type"] == "array"
+    assert properties["environment"]["items"]["type"] == "string"

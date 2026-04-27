@@ -41,16 +41,36 @@ class DiscoveryStore:
         self.app = app
         self.paths = resolve_discovery_paths(app)
 
-    def source_snapshot_path(self, source_name: str) -> Path:
-        return self.paths.source_cache_dir / f"{_safe_name(source_name)}.json"
+    def source_snapshot_path(self, source_name: str, *, source_origin: Optional[str] = None) -> Path:
+        return self.paths.source_cache_dir / _source_snapshot_file_name(
+            source_name,
+            source_origin=source_origin,
+            source_scope=self._source_scope(),
+        )
 
-    def load_source_snapshot(self, source_name: str) -> Optional[Dict[str, Any]]:
-        path = self.source_snapshot_path(source_name)
+    def _source_scope(self) -> Optional[str]:
+        explicit_config_path = getattr(self.app, "explicit_config_path", None)
+        if explicit_config_path:
+            return str(Path(str(explicit_config_path)).expanduser().resolve())
+        primary_config_dir = getattr(self.app, "primary_config_dir", None)
+        if primary_config_dir is not None:
+            return str(Path(str(primary_config_dir)).expanduser().resolve())
+        return None
+
+    def load_source_snapshot(self, source_name: str, *, source_origin: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        path = self.source_snapshot_path(source_name, source_origin=source_origin)
         if not path.exists():
             return None
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
+            return None
+        if not _snapshot_matches_identity(
+            payload,
+            source_name=source_name,
+            source_origin=source_origin,
+            source_scope=self._source_scope(),
+        ):
             return None
 
         operations: List[OperationDescriptor] = []
@@ -83,6 +103,7 @@ class DiscoveryStore:
         mode: str,
     ) -> Dict[str, Any]:
         now = _utc_now_iso()
+        source_scope = self._source_scope()
         operation_payloads = [operation.model_dump(mode="json") for operation in operations]
         operation_fingerprints = {
             operation["id"]: _fingerprint(operation) for operation in operation_payloads if isinstance(operation, dict)
@@ -93,6 +114,7 @@ class DiscoveryStore:
             "source": source_name,
             "provider_type": provider_type,
             "source_origin": source_origin,
+            "source_scope": source_scope,
             "mode": mode,
             "generated_at": now,
             "operation_count": len(operation_payloads),
@@ -109,11 +131,13 @@ class DiscoveryStore:
             {
                 "source": source_name,
                 "provider_type": provider_type,
+                "source_origin": source_origin,
+                "source_scope": source_scope,
                 "operations": operation_payloads,
                 "schema_index": schema_index,
             }
         )
-        path = self.source_snapshot_path(source_name)
+        path = self.source_snapshot_path(source_name, source_origin=source_origin)
         self._write_json(path, payload)
         return {"path": path, "snapshot": payload}
 
@@ -222,3 +246,49 @@ def _utc_now_iso() -> str:
 def _fingerprint(payload: Any) -> str:
     encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _normalize_optional_path(raw_path: Optional[str]) -> Optional[str]:
+    if raw_path is None:
+        return None
+    try:
+        return str(Path(raw_path).expanduser().resolve())
+    except Exception:
+        return str(raw_path)
+
+
+def _source_snapshot_file_name(
+    source_name: str,
+    *,
+    source_origin: Optional[str],
+    source_scope: Optional[str],
+) -> str:
+    identity_payload = {
+        "source": source_name,
+        "source_origin": _normalize_optional_path(source_origin),
+        "source_scope": _normalize_optional_path(source_scope),
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(identity_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:16]
+    return f"{_safe_name(source_name)}--{fingerprint}.json"
+
+
+def _snapshot_matches_identity(
+    payload: Dict[str, Any],
+    *,
+    source_name: str,
+    source_origin: Optional[str],
+    source_scope: Optional[str],
+) -> bool:
+    if str(payload.get("source") or source_name) != source_name:
+        return False
+    expected_origin = _normalize_optional_path(source_origin)
+    payload_origin = _normalize_optional_path(payload.get("source_origin"))
+    if expected_origin is not None and payload_origin != expected_origin:
+        return False
+    expected_scope = _normalize_optional_path(source_scope)
+    payload_scope = _normalize_optional_path(payload.get("source_scope"))
+    if expected_scope is not None and payload_scope not in {None, expected_scope}:
+        return False
+    return True

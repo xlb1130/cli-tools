@@ -222,7 +222,7 @@ def get_state(ctx: click.Context, static_catalog_builder: StaticCatalogBuilder) 
         config_path = raw.get("config_path")
         profile = raw.get("profile")
         global_output = raw.get("global_output", global_output)
-    remaining_tokens = list(getattr(root, "protected_args", []) or []) + list(getattr(root, "args", []) or [])
+    remaining_tokens = list(getattr(root, "args", []) or [])
     help_requested = any(token in {"-h", "--help"} for token in remaining_tokens)
     root.obj = CLIState(
         config_path=config_path,

@@ -313,7 +313,7 @@ Useful validation commands:
 
 ```bash
 # Compile and lint config/runtime
-PYTHONPATH=src python3 -m cts.main config lint --compile --format json
+PYTHONPATH=src python3 -m cts.main manage config lint --compile --format json
 
 # Run tests
 python3 -m pytest

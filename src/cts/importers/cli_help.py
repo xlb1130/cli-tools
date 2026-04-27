@@ -210,33 +210,82 @@ def _parse_help_output(help_text: str) -> Dict[str, Any]:
 
 def extract_help_subcommands(help_text: str) -> List[str]:
     lines = help_text.splitlines()
-    section_index = _find_section_index(
-        lines,
-        {
-            "commands:",
-            "subcommands:",
-            "available commands:",
-            "available subcommands:",
-        },
-    )
-    if section_index is None:
-        return []
-
     subcommands: List[str] = []
+    for section_name in {
+        "commands:",
+        "subcommands:",
+        "available commands:",
+        "available subcommands:",
+    }:
+        for section_index in _find_section_indexes(lines, {section_name}):
+            subcommands.extend(_extract_section_tokens(lines, section_index))
+
+    usage_line = next((line.strip().lower() for line in lines if line.strip().lower().startswith("usage:")), "")
+    if "<resource>" in usage_line:
+        for section_index in _find_placeholder_section_indexes(lines, placeholder="resource"):
+            subcommands.extend(_extract_section_tokens(lines, section_index))
+    if "<action>" in usage_line:
+        for section_index in _find_placeholder_section_indexes(lines, placeholder="action"):
+            subcommands.extend(_extract_section_tokens(lines, section_index))
+
+    unique: List[str] = []
+    for name in subcommands:
+        if name not in unique:
+            unique.append(name)
+    return unique
+
+
+def _extract_section_tokens(lines: List[str], section_index: int) -> List[str]:
+    tokens: List[str] = []
     for line in lines[section_index + 1 :]:
         if not line.strip():
-            if subcommands:
+            if tokens:
                 break
             continue
         if not line.startswith(" "):
             break
-        match = re.match(r"^\s{2,}([A-Za-z0-9][A-Za-z0-9._:-]*)\b", line)
+        match = re.match(
+            r"^\s{2,4}([A-Za-z0-9_][A-Za-z0-9._:-]*)(?:\s{2,}|\s+\[|\s+<|$)",
+            line,
+        )
         if not match:
             continue
         name = match.group(1).strip()
-        if name and name not in subcommands:
-            subcommands.append(name)
-    return subcommands
+        if name.lower() == "help":
+            continue
+        if name and name not in tokens:
+            tokens.append(name)
+    return tokens
+
+
+def _find_section_indexes(lines: List[str], names: set[str]) -> List[int]:
+    indexes: List[int] = []
+    normalized_names = {name.lower() for name in names}
+    for index, line in enumerate(lines):
+        if line.strip().lower() in normalized_names:
+            indexes.append(index)
+    return indexes
+
+
+def _find_placeholder_section_indexes(lines: List[str], *, placeholder: str) -> List[int]:
+    indexes: List[int] = []
+    placeholder_lower = placeholder.lower()
+    command_section_names = {
+        "commands:",
+        "subcommands:",
+        "available commands:",
+        "available subcommands:",
+    }
+    for index, line in enumerate(lines):
+        normalized = line.strip().lower()
+        if not normalized.endswith(":"):
+            continue
+        if normalized in command_section_names:
+            continue
+        if placeholder_lower not in normalized:
+            continue
+        indexes.append(index)
+    return indexes
 
 
 def _run_help_command(command_argv: List[str], *, help_flag: str) -> Tuple[List[str], str]:
@@ -312,7 +361,7 @@ def _parse_option_entry(spec: str, description: str) -> Optional[Dict[str, Any]]
     emit_flag = _pick_emit_flag(flags)
     arg_name = _flag_to_arg_name(emit_flag)
     metavar = _extract_metavar(spec, emit_flag)
-    repeated = "..." in spec or "repeatable" in description.lower()
+    repeated = "..." in spec or "repeatable" in description.lower() or _metavar_is_array(metavar)
     required = "[required]" in description.lower() or "(required)" in description.lower()
     schema_type = _infer_schema_type(metavar, description)
     kind = "flag" if schema_type == "boolean" and metavar is None else "value"
@@ -370,19 +419,20 @@ def _flag_to_arg_name(flag: str) -> str:
 def _extract_metavar(spec: str, emit_flag: str) -> Optional[str]:
     if "/" in spec and emit_flag in spec and re.search(r"--[A-Za-z0-9._-]+\s*/\s*--", spec):
         return None
-    pattern = re.escape(emit_flag) + r"(?:[ =]([A-Z][A-Z0-9_<>\[\]-]*\.{0,3}))?"
+    pattern = re.escape(emit_flag) + r"(?:[ =]((?:<[^>\s]+>|[A-Za-z][A-Za-z0-9_<>\[\]-]*\.{0,3})))?"
     match = re.search(pattern, spec)
     if match and match.group(1):
         return match.group(1)
-    generic = re.findall(r"(?:^|[ ,])([A-Z][A-Z0-9_<>\[\]-]*\.{0,3})(?:$|[ ,])", spec)
+    generic = re.findall(r"(?:^|[ ,])((?:<[^>\s]+>|[A-Za-z][A-Za-z0-9_<>\[\]-]*\.{0,3}))(?:$|[ ,])", spec)
     return generic[0] if generic else None
 
 
 def _infer_schema_type(metavar: Optional[str], description: str) -> str:
     if metavar is None:
         return "boolean"
-    normalized = metavar.replace("<", "").replace(">", "").replace("[", "").replace("]", "").replace("...", "")
-    upper = normalized.upper()
+    normalized = _normalize_metavar(metavar)
+    scalar_normalized = normalized[:-2] if normalized.endswith("[]") else normalized
+    upper = scalar_normalized.upper()
     if upper in {"INT", "INTEGER", "COUNT", "NUM"}:
         return "integer"
     if upper in {"FLOAT", "DOUBLE", "NUMBER", "DECIMAL"}:
@@ -392,6 +442,16 @@ def _infer_schema_type(metavar: Optional[str], description: str) -> str:
     if "path" in description.lower() or upper in {"PATH", "FILE", "DIR", "DIRECTORY"}:
         return "string"
     return "string"
+
+
+def _metavar_is_array(metavar: Optional[str]) -> bool:
+    if metavar is None:
+        return False
+    return _normalize_metavar(metavar).endswith("[]")
+
+
+def _normalize_metavar(metavar: str) -> str:
+    return metavar.replace("<", "").replace(">", "").replace("...", "")
 
 
 def _extract_default(description: str, schema_type: str, repeated: bool) -> tuple[str, Any]:

@@ -350,7 +350,7 @@ PYTHONPATH=src python3 -m cts.main hello
 
 ```bash
 # 编译并检查配置/运行时
-PYTHONPATH=src python3 -m cts.main config lint --compile --format json
+PYTHONPATH=src python3 -m cts.main manage config lint --compile --format json
 
 # 运行测试
 python3 -m pytest

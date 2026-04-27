@@ -62,6 +62,7 @@ cts import wizard <provider-type>
 
 12. [高阶实战：行程规划](12-travel-planning/README.md)
 13. [高阶实战：自动问题分析、自动需求开发与自动部署](13-advanced-automation/README.md)
+14. [产品规划：Super Desktop Assistant](14-super-desktop-assistant/README.md)
 
 这两篇更适合在你已经掌握 MCP、mount、execution 之后再看，因为它们关注的是：
 
@@ -69,6 +70,10 @@ cts import wizard <provider-type>
 - 怎么把多个 MCP 能力编排成完整链路
 - 怎么组织自动分析、自动开发、自动部署这类场景
 - 怎么做权限边界和落地顺序控制
+
+如果你正在规划一个“统一 CLI + 桌面工具 + MCP + Skill + 云沙箱”的产品形态，可直接看：
+
+- [产品规划：Super Desktop Assistant](14-super-desktop-assistant/README.md)
 
 ### 第 6 步：最后再做扩展开发
 
@@ -145,6 +150,7 @@ mounts:
 - 想接入远端 MCP tools：看 [MCP Server](07-mcp/README.md)
 - 想把高德 MCP、12306 MCP、必应搜索串成出行方案：看 [高阶实战：行程规划](12-travel-planning/README.md)
 - 想把多个 MCP 串成问题分析、需求开发、部署链路：看 [高阶实战：自动问题分析、自动需求开发与自动部署](13-advanced-automation/README.md)
+- 想规划统一入口的超级桌面助理：看 [产品规划：Super Desktop Assistant](14-super-desktop-assistant/README.md)
 - 想理解命令路径、稳定 id、alias：看 [Mount 设计](08-mounts/README.md)
 - 想理解 `invoke` 和 `explain`：看 [执行方式](09-execution/README.md)
 - 想自己扩 provider：看 [Plugin](10-plugins/README.md)
