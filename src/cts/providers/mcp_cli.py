@@ -5,6 +5,7 @@ import locale
 import shlex
 import shutil
 import subprocess
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -229,6 +230,7 @@ class MCPCLIProvider:
             primitive_type in {"tool", "resource", "prompt"}
             and server_config is not None
             and _supports_mcp_cli_noninteractive(server_config)
+            and _supports_mcp_cli_primitive(_resolve_mcp_cli_binary(source_config), primitive_type)
         )
 
         if use_native_mcp_cli:
@@ -492,12 +494,27 @@ def _build_mcp_cli_argv(
     if not config_file or not server:
         raise ProviderError("mcp-cli mode requires config_file and server")
 
+    mcp_cli_binary = _resolve_mcp_cli_binary(source_config) or "mcp-cli"
+    command_style = _detect_mcp_cli_command_style(mcp_cli_binary)
+    if command_style == "modern":
+        if primitive_type != "tool":
+            raise ProviderError(f"native mcp-cli does not support '{primitive_type}' primitives; use node bridge")
+        argv = [
+            mcp_cli_binary,
+            "-c",
+            str(app.resolve_path(config_file)),
+            "call",
+            server,
+            target,
+            json.dumps(args or {}, ensure_ascii=False),
+        ]
+        return argv
+
     command = _mcp_cli_command_for_primitive(primitive_type)
     argv = [
-        _resolve_mcp_cli_binary(source_config) or "mcp-cli",
+        mcp_cli_binary,
         "-c",
         str(app.resolve_path(config_file)),
-        
         command,
         f"{server}:{target}",
     ]
@@ -549,6 +566,28 @@ def _resolve_mcp_cli_binary(source_config: SourceConfig) -> Optional[str]:
         if matches:
             return str(matches[-1])
     return None
+
+
+def _supports_mcp_cli_primitive(mcp_cli_binary: Optional[str], primitive_type: str) -> bool:
+    style = _detect_mcp_cli_command_style(mcp_cli_binary or "mcp-cli")
+    if style == "modern":
+        return primitive_type == "tool"
+    return primitive_type in {"tool", "resource", "prompt"}
+
+
+@lru_cache(maxsize=8)
+def _detect_mcp_cli_command_style(mcp_cli_binary: str) -> str:
+    try:
+        completed = _run_command([mcp_cli_binary, "--help"], timeout_seconds=5)
+    except (FileNotFoundError, subprocess.SubprocessError, ProviderError):
+        return "legacy"
+
+    help_text = f"{completed.stdout}\n{completed.stderr}".lower()
+    if "call <server> <tool>" in help_text:
+        return "modern"
+    if "call-tool" in help_text or "read-resource" in help_text or "get-prompt" in help_text:
+        return "legacy"
+    return "legacy"
 
 
 def _bridge_script_path() -> Path:

@@ -92,6 +92,8 @@ cts --config cts.yaml manage source test my_mcp --discover --format json
 cts --config cts.yaml manage mount import my_mcp --under my
 ```
 
+如果你本机安装了 `mcp-cli`，CTS 会优先使用当前版本支持的原生 tool 调用方式，也就是 `mcp-cli call <server> <tool> <json>`。对于 `resource` / `prompt` 这类 primitive，CTS 仍会自动走 Node bridge。
+
 ---
 
 ## 导入后怎么看结果

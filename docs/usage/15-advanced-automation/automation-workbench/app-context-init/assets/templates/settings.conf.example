@@ -1,0 +1,20 @@
+# user custom area start
+# user custom area end
+
+# cts automation-workbench managed block start
+workbench_version=2.0.0
+workbench_dir=~/.cts/automation-workbench
+common_dir=~/.cts/common
+docs_dir=~/.cts/automation-workbench/docs
+common_docs_dir=~/.cts/common/docs
+common_scripts_dir=~/.cts/common/scripts
+hooks_dir=~/.cts/common/scripts/hooks
+mcp_config_path=~/.config/mcp/mcp_servers.json
+agent_context_targets=./CLAUDE.md,./AGENTS.md
+task_id_script=~/.cts/common/scripts/task_id_generator.py
+token_collector_script=~/.cts/common/scripts/token_collector.py
+task_report_script=~/.cts/common/scripts/task_reporter.py
+self_evolution_script=~/.cts/common/scripts/self_evolution_reporter.py
+default_env=dev
+self_evolution_enabled=true
+# cts automation-workbench managed block end

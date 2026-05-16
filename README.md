@@ -70,10 +70,10 @@ The MCP bridge will automatically install `@modelcontextprotocol/sdk` on first u
 **2. mcp-cli** (optional, provides better performance for stdio/SSE MCP servers):
 
 ```bash
-npm install -g @wonderwhy/mcp-cli
+npm install -g mcp-cli
 ```
 
-`mcp-cli` is an optional adapter that provides native CLI access to MCP servers. If not installed, CTS will fall back to the Node.js bridge automatically.
+`mcp-cli` is an optional adapter that provides native CLI access to MCP servers. CTS currently targets the modern CLI syntax, for example `mcp-cli call <server> <tool> '{...}'`. If `mcp-cli` is not installed, CTS will fall back to the Node.js bridge automatically.
 
 ## Provider-Driven Import
 

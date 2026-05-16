@@ -251,6 +251,7 @@ mounts: []
 
     monkeypatch.setattr(mcp_cli.subprocess, "run", fake_run)
     monkeypatch.setattr(mcp_cli, "_resolve_mcp_cli_binary", lambda source_config: "mcp-cli")
+    monkeypatch.setattr(mcp_cli, "_detect_mcp_cli_command_style", lambda binary: "modern")
     monkeypatch.setattr(mcp_cli, "_build_bridge_argv", lambda *args, **kwargs: ["node", "bridge.mjs", "call-tool"])
 
     result = provider.invoke(
@@ -263,8 +264,49 @@ mounts: []
     assert result.ok is True
     assert result.data == {"items": [1, 2, 3]}
     assert result.metadata["strategy"] == "node-bridge"
-    assert calls[0][:4] == ["mcp-cli", "-c", str(servers_path), "call-tool"]
+    assert calls[0] == ["mcp-cli", "-c", str(servers_path), "call", "demo", "query_recent_workitem_list", '{"limit": 10}']
     assert calls[1] == ["node", "bridge.mjs", "call-tool"]
+
+
+def test_build_mcp_cli_argv_uses_modern_call_syntax(tmp_path: Path, monkeypatch):
+    config_path = tmp_path / "cts.yaml"
+    servers_path = tmp_path / "servers.json"
+    servers_path.write_text('{"mcpServers":{"demo":{"command":"demo-server"}}}\n', encoding="utf-8")
+    config_path.write_text(
+        """
+version: 1
+sources:
+  remote_mcp:
+    type: mcp
+    config_file: ./servers.json
+    server: demo
+mounts: []
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    app = build_app(str(config_path))
+    monkeypatch.setattr(mcp_cli, "_resolve_mcp_cli_binary", lambda source_config: "mcp-cli")
+    monkeypatch.setattr(mcp_cli, "_detect_mcp_cli_command_style", lambda binary: "modern")
+
+    argv = mcp_cli._build_mcp_cli_argv(
+        app.config.sources["remote_mcp"],
+        app,
+        "tool",
+        "list_pipelines",
+        {"organizationId": "683ea9d0fb11c69936a91d12", "perPage": 30},
+    )
+
+    assert argv == [
+        "mcp-cli",
+        "-c",
+        str(servers_path),
+        "call",
+        "demo",
+        "list_pipelines",
+        '{"organizationId": "683ea9d0fb11c69936a91d12", "perPage": 30}',
+    ]
 
 
 def test_decode_subprocess_output_prefers_utf8_over_windows_gbk():

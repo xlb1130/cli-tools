@@ -129,10 +129,10 @@ nvm install --lts
 **2. mcp-cli**（可选，为 stdio/SSE 类型 MCP server 提供更好的性能）：
 
 ```bash
-npm install -g @wonderwhy/mcp-cli
+npm install -g mcp-cli
 ```
 
-`mcp-cli` 是一个可选适配器，提供原生命令行访问 MCP server 的能力。如果未安装，CTS 会自动回退到 Node.js bridge。
+`mcp-cli` 是一个可选适配器，提供原生命令行访问 MCP server 的能力。CTS 当前对齐的是新版 CLI 语法，例如 `mcp-cli call <server> <tool> '{...}'`。如果未安装，CTS 会自动回退到 Node.js bridge。
 
 ## Provider 驱动的导入入口
 

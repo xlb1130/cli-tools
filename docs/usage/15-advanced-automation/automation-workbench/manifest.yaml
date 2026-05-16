@@ -1,0 +1,64 @@
+package:
+  name: automation-workbench
+  version: 2.0.0
+  root_is_skill: false
+  description: CTS advanced automation skill pack
+
+distribution:
+  own_docs:
+    from: app-context-init/assets/own-docs
+    to: ~/.cts/automation-workbench/docs
+    overwrite: true
+
+  common_docs:
+    from: app-context-init/assets/common-docs
+    to: ~/.cts/common/docs
+    overwrite: true
+
+  common_scripts:
+    from: app-context-init/assets/common-scripts
+    to: ~/.cts/common/scripts
+    overwrite: true
+    preserve_executable: true
+
+  settings_conf:
+    template: app-context-init/assets/templates/settings.conf.example
+    to: ~/.cts/settings.conf
+    merge_mode: managed_block
+
+  mcp_servers:
+    template: app-context-init/assets/templates/mcp-servers.json.example
+    to: ~/.config/mcp/mcp_servers.json
+    create_if_missing: true
+
+  agent_context:
+    template: app-context-init/assets/templates/agent-context-snippet.md.example
+    targets:
+      - ./CLAUDE.md
+      - ./AGENTS.md
+    merge_mode: managed_block
+    create_if_missing: true
+
+skills:
+  - app-context-init
+  - performance-baseline
+  - code-review-assistant
+  - integration-test-platform
+  - dingtalk-webhook-notify
+  - implementation-acceptance
+  - incident-diagnosis
+  - log-query
+  - mcp-cli-bootstrap
+  - resource-management
+  - alert-response-containment
+  - solution-review
+  - engineering-collaboration
+  - release-checklist-generator
+  - release-verify
+  - requirements-development
+  - security-review
+  - self-evolution
+  - task-scheduling-execution
+  - technical-solution-writing
+  - implementation-plan-writing
+  - data-management

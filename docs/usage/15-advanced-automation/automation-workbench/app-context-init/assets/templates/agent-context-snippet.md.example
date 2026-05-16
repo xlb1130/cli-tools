@@ -1,0 +1,124 @@
+# Automation Workbench Managed Context
+
+<!-- cts automation-workbench managed context start -->
+
+## How To Use This Context
+
+When working in this repository, do not start from raw MCP calls alone. Start from the engineering scenario, then read the matching guidance file, then use `mcp-cli` through the configured aliases.
+
+Use these files as your primary references:
+
+## Core Entry Files
+
+- `~/.cts/automation-workbench/docs/01-guardrails.md`
+  Purpose: global execution guardrails and escalation boundaries.
+  Use when: the task may touch production, write data, change config, trigger release, or otherwise carry operational risk.
+
+- `~/.cts/common/docs/01-context-object.md`
+  Purpose: defines the shared context object and what facts to track.
+  Use when: you are starting requirement analysis, incident analysis, plan writing, or any multi-step task.
+
+- `~/.config/mcp/mcp_servers.json`
+  Purpose: the only supported `mcp-cli` server alias registry.
+  Use when: you need to inspect available MCP servers or call tools.
+
+## File Guide
+
+- `~/.cts/automation-workbench/docs/03-checkpoints.md`
+  Purpose: defines stage gates across requirement, design, test, release, and retrospective.
+  Use when: you need to know what must be true before moving to the next delivery stage.
+
+- `~/.cts/automation-workbench/docs/05-health-check.md`
+  Purpose: defines what “healthy” means beyond process liveness.
+  Use when: you are diagnosing incidents, validating releases, or checking runtime stability.
+
+- `~/.cts/automation-workbench/docs/06-switch-guidelines.md`
+  Purpose: defines how feature flags, gray switches, and emergency switches should be used and retired.
+  Use when: mitigation, grayscale rollout, or config-based rollback is under discussion.
+
+- `~/.cts/automation-workbench/docs/07-implementation-acceptance.md`
+  Purpose: defines acceptance dimensions, evidence, and go/no-go conclusion format.
+  Use when: implementation is claimed complete and needs formal acceptance.
+
+- `~/.cts/automation-workbench/docs/08-client-compatibility.md`
+  Purpose: defines compatibility checks across client versions and platforms.
+  Use when: server changes may affect old clients, gray traffic, or mixed-version environments.
+
+- `~/.cts/automation-workbench/docs/11-reliability-five-pieces.md`
+  Purpose: defines the minimum reliability foundation: logs, metrics, tracing, switches, and rollback.
+  Use when: evaluating operational readiness, diagnosing instability, or preparing release controls.
+
+- `~/.cts/automation-workbench/docs/12-coding-guidelines.md`
+  Purpose: defines implementation and review expectations.
+  Use when: reviewing code, drafting implementation plans, or checking post-coding quality.
+
+- `~/.cts/automation-workbench/docs/14-release-checklist.md`
+  Purpose: defines pre-release, in-release, and post-release checks.
+  Use when: generating release checklists or making release go/no-go decisions.
+
+- `~/.cts/automation-workbench/docs/15-security-baseline.md`
+  Purpose: defines the minimum security bar for release and design decisions.
+  Use when: handling secrets, permissions, external interfaces, sensitive data, or third-party dependencies.
+
+- `~/.cts/automation-workbench/docs/16-task-anchor-check.md`
+  Purpose: defines anchor points that keep task state stable across stages.
+  Use when: breaking work down, syncing status, or checking whether context has drifted.
+
+- `~/.cts/automation-workbench/docs/17-testing-guidelines.md`
+  Purpose: defines test layering and regression expectations.
+  Use when: deciding what must be validated before acceptance or release.
+
+- `~/.cts/common/docs/02-error-handling.md`
+  Purpose: defines reusable error classes and response strategies.
+  Use when: you encounter environment, dependency, timeout, permission, or business-state errors.
+
+- `~/.cts/common/docs/04-file-permissions.md`
+  Purpose: defines filesystem write boundaries and overwrite policy.
+  Use when: creating, updating, or merging local files.
+
+- `~/.cts/common/docs/05-path-conventions.md`
+  Purpose: defines stable local paths used by the automation stack.
+  Use when: you need to locate docs, scripts, config, or output directories.
+
+- `~/.cts/common/docs/06-metrics-tracking.md`
+  Purpose: defines metric layers and reporting expectations.
+  Use when: evaluating performance, release health, or recurring task quality.
+
+- `~/.cts/common/docs/07-duration-baseline.md`
+  Purpose: defines stage duration baselines and variance interpretation.
+  Use when: judging whether a task or release step is abnormally slow.
+
+- `~/.cts/common/docs/08-execution-tracking.md`
+  Purpose: defines execution states and critical event tracking.
+  Use when: you need to summarize task progress, failure points, or run history.
+
+## MCP Usage Rule
+
+- Use `mcp-cli` against aliases from `~/.config/mcp/mcp_servers.json`.
+- Do not redefine server aliases locally.
+- Treat MCP as the execution substrate, not as the main structure of your explanation.
+- Prefer this sequence:
+  1. identify the engineering scenario
+  2. read the matching guidance files above
+  3. collect evidence
+  4. call MCP tools as needed
+  5. return objective, evidence, decision, next action
+
+## Preferred Aliases
+
+- `dingtalk`: milestone and incident notifications
+- `yunxiao`: task, requirement, release, and delivery coordination
+- `mysql`: business data lookup, sampling, and validation
+- `gitlab`: merge request, repository, and delivery context
+- `playwright`: browser flows and acceptance evidence
+- `redis`: cache, queue, lock, and rate-limit state
+- `grafana`: logs, metrics, alerts, and runtime observability
+- `kubernetes`: cluster, workload, and runtime resource inspection
+
+## Security and Privacy
+
+- Never write secrets, tokens, passwords, or raw credentials into repository files, reports, or messages.
+- Summarize sensitive data instead of exposing raw values unless explicitly required.
+- For risky actions, state blast radius and rollback path before recommending execution.
+
+<!-- cts automation-workbench managed context end -->
